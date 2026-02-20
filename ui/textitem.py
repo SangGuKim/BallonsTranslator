@@ -646,10 +646,14 @@ class TextBlkItem(QGraphicsTextItem):
         font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias | QFont.StyleStrategy.NoSubpixelAntialias)
 
         fweight = ffmat.font_weight
-        if fweight is  None:
-            fweight = font.weight()
+        if fweight is None:
+            fweight = 400
             ffmat.font_weight = fweight
-        font.setBold(ffmat.bold)
+
+        # bold is derived from weight; keep the field consistent
+        is_bold = fweight >= 700
+        ffmat.bold = is_bold
+        font.setBold(is_bold)
 
         self.document().setDefaultFont(font)
         format.setFont(font)
@@ -658,8 +662,8 @@ class TextBlkItem(QGraphicsTextItem):
             format.setForeground(gradient)
         else:
             format.setForeground(QColor(*ffmat.foreground_color()))
-        if not ffmat.bold:
-            format.setFontWeight(fweight)
+        # Always apply the numeric weight so values like 300/500/600 work correctly
+        format.setFontWeight(fweight)
         format.setFontItalic(ffmat.italic)
         format.setFontUnderline(ffmat.underline)
         if not ffmat.vertical:

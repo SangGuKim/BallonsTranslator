@@ -10,6 +10,7 @@ from utils import shared
 from utils import config as C
 from utils.fontformat import FontFormat, px2pt, LineSpacingType
 from .custom_widget import Widget, ColorPickerLabel, ClickableLabel, CheckableLabel, TextCheckerLabel, AlignmentChecker, QFontChecker, SizeComboBox, SizeControlLabel
+from .custom_widget import FontWeightComboBox
 from .textitem import TextBlkItem
 from .text_advanced_format import TextAdvancedFormatPanel
 from .text_style_presets import TextStylePresetPanel
@@ -106,7 +107,7 @@ class AlignmentBtnGroup(QFrame):
 
 
 class FormatGroupBtn(QFrame):
-    param_changed = Signal(str, bool)
+    param_changed = Signal(str, object)
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.boldBtn = QFontChecker(self)
@@ -125,7 +126,9 @@ class FormatGroupBtn(QFrame):
         hlayout.setSpacing(0)
 
     def setBold(self):
-        self.param_changed.emit('bold', self.boldBtn.isChecked())
+        # B button is a shortcut: bold=ON → weight 700, bold=OFF → weight 400
+        weight = 700 if self.boldBtn.isChecked() else 400
+        self.param_changed.emit('font_weight', weight)
 
     def setItalic(self):
         self.param_changed.emit('italic', self.italicBtn.isChecked())
@@ -261,6 +264,7 @@ class FontFormatPanel(Widget):
         self.familybox.setObjectName("FontFamilyBox")
         self.familybox.setToolTip(self.tr("Font Family"))
         self.familybox.param_changed.connect(self.on_param_changed)
+        self.familybox.param_changed.connect(self._on_family_changed_for_weight)
         self.familybox.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
         self.fontsizebox = FontSizeBox(self)
@@ -268,6 +272,10 @@ class FontFormatPanel(Widget):
         self.fontsizebox.setObjectName("FontSizeBox")
         self.fontsizebox.fcombobox.setToolTip(self.tr("Change font size"))
         self.fontsizebox.param_changed.connect(self.on_param_changed)
+
+        self.fontWeightCombo = FontWeightComboBox(self)
+        self.fontWeightCombo.setToolTip(self.tr("Font Weight"))
+        self.fontWeightCombo.param_changed.connect(self.on_font_weight_changed)
         
         self.lineSpacingLabel = SizeControlLabel(self, direction=1, transparent_bg=False)
         self.lineSpacingLabel.setObjectName("lineSpacingLabel")
@@ -380,8 +388,7 @@ class FontFormatPanel(Widget):
         hl1 = QHBoxLayout()
         hl1.addWidget(self.familybox)
         hl1.addWidget(self.fontsizebox)
-        hl1.addWidget(self.lineSpacingLabel)
-        hl1.addWidget(self.lineSpacingBox)
+        hl1.addWidget(self.fontWeightCombo)
         hl1.setSpacing(4)
         hl1.setContentsMargins(0, 12, 0, 0)
         hl2 = QHBoxLayout()
@@ -395,6 +402,8 @@ class FontFormatPanel(Widget):
         hl3 = QHBoxLayout()
         hl3.setAlignment(Qt.AlignmentFlag.AlignCenter)
         hl3.addLayout(stroke_hlayout)
+        hl3.addWidget(self.lineSpacingLabel)
+        hl3.addWidget(self.lineSpacingBox)
         hl3.addLayout(lettersp_hlayout)
         hl3.setContentsMargins(3, 0, 3, 0)
         hl3.setSpacing(13)
@@ -444,6 +453,27 @@ class FontFormatPanel(Widget):
         else:
             func(param_name, value, C.active_format, is_global=False, blkitems=self.textblk_item, set_focus=True, **func_kwargs)
 
+    def on_font_weight_changed(self, param_name: str, weight: int):
+        """Called when user picks a weight from the combo or clicks the B button."""
+        # Keep bold field in sync so legacy code stays consistent
+        C.active_format.bold = weight >= 700
+        # Update the B button visually without re-triggering signals
+        self.formatBtnGroup.boldBtn.blockSignals(True)
+        self.formatBtnGroup.boldBtn.setChecked(weight >= 700)
+        self.formatBtnGroup.boldBtn.blockSignals(False)
+        # Update weight combo visually (in case the call came from B button)
+        self.fontWeightCombo.blockSignals(True)
+        self.fontWeightCombo.set_weight(weight)
+        self.fontWeightCombo.blockSignals(False)
+        # Dispatch through the normal pipeline
+        self.on_param_changed('font_weight', weight)
+
+    def _on_family_changed_for_weight(self, param_name: str, family: str):
+        """Re-populate the weight combo when the font family changes."""
+        current_weight = self.fontWeightCombo.current_weight()
+        self.fontWeightCombo.update_for_family(family)
+        self.fontWeightCombo.set_weight(current_weight)
+
     def update_text_style_label(self):
         if self.global_mode():
             active_text_style_label = self.active_text_style_label()
@@ -488,7 +518,13 @@ class FontFormatPanel(Widget):
         self.lineSpacingBox.setValue(font_format.line_spacing)
         self.letterSpacingBox.setValue(font_format.letter_spacing)
         self.verticalChecker.setChecked(font_format.vertical)
-        self.formatBtnGroup.boldBtn.setChecked(font_format.bold)
+
+        # Sync weight combobox and bold button from font_weight (source of truth)
+        weight = font_format.font_weight if font_format.font_weight is not None else (700 if font_format.bold else 400)
+        self.fontWeightCombo.update_for_family(font_format.font_family)
+        self.fontWeightCombo.set_weight(weight)
+        self.formatBtnGroup.boldBtn.setChecked(weight >= 700)
+
         self.formatBtnGroup.underlineBtn.setChecked(font_format.underline)
         self.formatBtnGroup.italicBtn.setChecked(font_format.italic)
         self.alignBtnGroup.setAlignment(font_format.alignment)

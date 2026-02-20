@@ -2,7 +2,7 @@ from typing import List, Callable
 
 from qtpy.QtWidgets import QComboBox, QWidget
 from qtpy.QtCore import Signal, Qt
-from qtpy.QtGui import QDoubleValidator
+from qtpy.QtGui import QDoubleValidator, QFontDatabase
 
 from utils.shared import CONFIG_COMBOBOX_LONG, CONFIG_COMBOBOX_MIDEAN, CONFIG_COMBOBOX_SHORT, CONFIG_COMBOBOX_HEIGHT
 from .push_button import NoBorderPushBtn
@@ -133,3 +133,96 @@ class SizeComboBox(QComboBox):
 
 class SmallSizeComboBox(SizeComboBox):
     pass
+
+
+class FontWeightComboBox(QComboBox):
+    """Combobox that lists available font weights for a given family.
+
+    Emits param_changed('font_weight', <int 100-900>) when the user picks a weight.
+    Display is intentionally compact – just the numeric weight value.
+    """
+
+    param_changed = Signal(str, int)
+
+    # Standard CSS weights used as a fallback when QFontDatabase returns nothing
+    _STANDARD_WEIGHTS = [100, 200, 300, 400, 500, 600, 700, 800, 900]
+
+    def __init__(self, parent: QWidget = None) -> None:
+        super().__init__(parent)
+        self._current_family: str = ''
+        self.setFixedWidth(58)
+        self.setToolTip("Font Weight")
+        self.currentIndexChanged.connect(self._on_index_changed)
+        self._populate_standard()
+
+    # ------------------------------------------------------------------
+    # public helpers
+    # ------------------------------------------------------------------
+
+    def update_for_family(self, family: str) -> None:
+        """Re-populate items with the weights available for *family*."""
+        if family == self._current_family:
+            return
+        self._current_family = family
+        prev_weight = self.current_weight()
+
+        self.blockSignals(True)
+        self.clear()
+
+        styles = QFontDatabase.styles(family)
+        weights_seen: set = set()
+
+        if styles:
+            for style in styles:
+                raw_w = QFontDatabase.weight(family, style)
+                if raw_w < 0:
+                    continue
+                # Normalise to the nearest 100
+                w = round(raw_w / 100) * 100
+                w = max(100, min(900, w))
+                if w not in weights_seen:
+                    weights_seen.add(w)
+            weights = sorted(weights_seen)
+        else:
+            weights = self._STANDARD_WEIGHTS
+
+        for w in weights:
+            self.addItem(str(w), userData=w)
+
+        self.blockSignals(False)
+        self.set_weight(prev_weight)
+
+    def set_weight(self, weight: int) -> None:
+        """Select the item whose userData is closest to *weight*."""
+        if weight is None:
+            weight = 400
+        best_idx, best_diff = 0, 9999
+        for i in range(self.count()):
+            diff = abs((self.itemData(i) or 0) - weight)
+            if diff < best_diff:
+                best_diff, best_idx = diff, i
+        self.blockSignals(True)
+        self.setCurrentIndex(best_idx)
+        self.blockSignals(False)
+
+    def current_weight(self) -> int:
+        data = self.itemData(self.currentIndex())
+        return data if data is not None else 400
+
+    # ------------------------------------------------------------------
+    # private
+    # ------------------------------------------------------------------
+
+    def _populate_standard(self) -> None:
+        self.blockSignals(True)
+        for w in self._STANDARD_WEIGHTS:
+            self.addItem(str(w), userData=w)
+        self.setCurrentIndex(3)  # 400 Regular
+        self.blockSignals(False)
+
+    def _on_index_changed(self) -> None:
+        self.param_changed.emit('font_weight', self.current_weight())
+
+    def wheelEvent(self, event):
+        # Prevent accidental scroll-wheel changes
+        event.ignore()
