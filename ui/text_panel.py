@@ -297,7 +297,7 @@ class FontFormatPanel(Widget):
         self.alignBtnGroup.param_changed.connect(self.on_param_changed)
 
         self.formatBtnGroup = FormatGroupBtn(self)
-        self.formatBtnGroup.param_changed.connect(self.on_param_changed)
+        self.formatBtnGroup.param_changed.connect(self.on_format_btn_changed)
 
         self.verticalChecker = QFontChecker(self)
         self.verticalChecker.setObjectName("FontVerticalChecker")
@@ -452,6 +452,28 @@ class FontFormatPanel(Widget):
             self.update_text_style_label()
         else:
             func(param_name, value, C.active_format, is_global=False, blkitems=self.textblk_item, set_focus=True, **func_kwargs)
+
+    def on_format_btn_changed(self, param_name: str, value):
+        """Router for FormatGroupBtn signals.
+        font_weight (from B button) goes through on_font_weight_changed to keep combo in sync.
+        italic/underline go straight to on_param_changed.
+        """
+        if param_name == 'font_weight':
+            weight = value  # value is 700 or 400 from setBold()
+            if weight >= 700:
+                # Resolve the actual bold weight Qt would pick for this family
+                from qtpy.QtGui import QFontDatabase
+                family = C.active_format.font_family
+                bold_weights = []
+                for style in QFontDatabase.styles(family):
+                    if QFontDatabase.bold(family, style):
+                        w = QFontDatabase.weight(family, style)
+                        if w >= 0:
+                            bold_weights.append(round(w / 100) * 100)
+                weight = min(bold_weights) if bold_weights else 700
+            self.on_font_weight_changed(param_name, weight)
+        else:
+            self.on_param_changed(param_name, value)
 
     def on_font_weight_changed(self, param_name: str, weight: int):
         """Called when user picks a weight from the combo or clicks the B button."""

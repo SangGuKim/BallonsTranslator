@@ -6,7 +6,7 @@ from qtpy.QtWidgets import QGraphicsItem, QWidget, QGraphicsSceneHoverEvent, QGr
 from qtpy.QtCore import Qt, QRect, QRectF, QPointF, Signal, QSizeF
 from qtpy.QtGui import (QGradient, QKeyEvent, QFont, QTextCursor, QPixmap, QPainterPath, QTextDocument, 
                        QInputMethodEvent, QPainter, QPen, QColor, QTextCharFormat, QTextDocument, QLinearGradient, 
-                       QBrush, QPalette, QAbstractTextDocumentLayout)
+                       QBrush, QPalette, QAbstractTextDocumentLayout, QFontDatabase)
 
 from utils.textblock import TextBlock, FontFormat, TextAlignment, LineSpacingType
 from utils.imgproc_utils import xywh2xyxypoly, rotate_polygons
@@ -14,6 +14,25 @@ from utils.fontformat import FontFormat, px2pt, pt2px
 from .misc import td_pattern, table_pattern
 from .scene_textlayout import VerticalTextDocumentLayout, HorizontalTextDocumentLayout, SceneTextLayout
 from .text_graphical_effect import apply_shadow_effect
+
+# Cache: family name → number of distinct weights available
+# Cache: family → bold weight (the weight Qt would pick for setBold(True))
+_bold_weight_cache: dict = {}
+
+def _get_bold_weight(family: str) -> int:
+    """Return the lowest weight Qt considers 'bold' for this family.
+    Falls back to 700 if no bold style exists (Qt will software-emulate)."""
+    if family in _bold_weight_cache:
+        return _bold_weight_cache[family]
+    bold_weights = []
+    for style in QFontDatabase.styles(family):
+        if QFontDatabase.bold(family, style):
+            w = QFontDatabase.weight(family, style)
+            if w >= 0:
+                bold_weights.append(round(w / 100) * 100)
+    result = min(bold_weights) if bold_weights else 700
+    _bold_weight_cache[family] = result
+    return result
 
 TEXTRECT_SHOW_COLOR = QColor(30, 147, 229, 170)
 TEXTRECT_SELECTED_COLOR = QColor(248, 64, 147, 170)
@@ -647,12 +666,24 @@ class TextBlkItem(QGraphicsTextItem):
 
         fweight = ffmat.font_weight
         if fweight is None:
-            fweight = 400
+            # Migrate legacy data: bold=True but no font_weight stored
+            if ffmat.bold:
+                fweight = _get_bold_weight(font.family())
+            else:
+                fweight = 400
             ffmat.font_weight = fweight
 
         # bold is derived from weight; keep the field consistent
         is_bold = fweight >= 700
         ffmat.bold = is_bold
+
+        # Apply to the default font (affects document-level rendering)
+        # setWeight picks actual font file; setBold additionally enables
+        # software emulation for fonts that don't have a bold variant.
+        try:
+            font.setWeight(QFont.Weight(fweight))
+        except Exception:
+            pass
         font.setBold(is_bold)
 
         self.document().setDefaultFont(font)
@@ -662,8 +693,8 @@ class TextBlkItem(QGraphicsTextItem):
             format.setForeground(gradient)
         else:
             format.setForeground(QColor(*ffmat.foreground_color()))
-        # Always apply the numeric weight so values like 300/500/600 work correctly
-        format.setFontWeight(fweight)
+        # font already has setWeight + setBold applied; setFont() copies that
+        # into the char format. No need for a separate setFontWeight call.
         format.setFontItalic(ffmat.italic)
         format.setFontUnderline(ffmat.underline)
         if not ffmat.vertical:
@@ -819,7 +850,10 @@ class TextBlkItem(QGraphicsTextItem):
     def setFontWeight(self, value: float, repaint_background: bool = True, set_selected: bool = False, restore_cursor: bool = False):
         cursor, after_kwargs = self._before_set_ffmt(set_selected, restore_cursor)
         cfmt = QTextCharFormat()
-        cfmt.setFontWeight(value)
+        try:
+            cfmt.setFontWeight(QFont.Weight(int(value)))
+        except Exception:
+            cfmt.setFontWeight(value)
         self.set_cursor_cfmt(cursor, cfmt, True)
         self._after_set_ffmt(cursor, repaint_background, restore_cursor, **after_kwargs)
 
