@@ -170,24 +170,20 @@ class FontWeightComboBox(QComboBox):
         self.clear()
 
         styles = QFontDatabase.styles(family)
-        weights_seen: set = set()
 
         if styles:
+            weights_seen: set = set()
             for style in styles:
                 raw_w = QFontDatabase.weight(family, style)
-                if raw_w < 0:
+                if raw_w < 0 or raw_w in weights_seen:
                     continue
-                # Normalise to the nearest 100
-                w = round(raw_w / 100) * 100
-                w = max(100, min(900, w))
-                if w not in weights_seen:
-                    weights_seen.add(w)
-            weights = sorted(weights_seen)
+                weights_seen.add(raw_w)
+            # Display as actual weight values, sorted
+            for w in sorted(weights_seen):
+                self.addItem(str(w), userData=w)
         else:
-            weights = self._STANDARD_WEIGHTS
-
-        for w in weights:
-            self.addItem(str(w), userData=w)
+            for w in self._STANDARD_WEIGHTS:
+                self.addItem(str(w), userData=w)
 
         self.blockSignals(False)
         self.set_weight(prev_weight)

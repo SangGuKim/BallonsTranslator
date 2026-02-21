@@ -247,10 +247,28 @@ def main():
     # Fonts
     # Load custom fonts if they exist
     if osp.exists(PATH_FONTS):
+        _seen_families: set = set()
         for fp in find_all_files_recursive(PATH_FONTS, FONT_EXTS):
             fnt_idx = QFontDatabase.addApplicationFont(fp)
             if fnt_idx >= 0:
-                shared.CUSTOM_FONTS.append(QFontDatabase.applicationFontFamilies(fnt_idx)[0])
+                qt_families = QFontDatabase.applicationFontFamilies(fnt_idx)
+                if not qt_families:
+                    continue
+                # Qt returns all name table entries for this font file.
+                # Pick the best one: prefer ASCII (no CJK/hangul), then shortest.
+                def _family_sort_key(name):
+                    is_ascii = all(ord(c) < 128 for c in name)
+                    return (0 if is_ascii else 1, len(name))
+                candidates = [f for f in qt_families if f.strip()]
+                family = min(candidates, key=_family_sort_key) if candidates else qt_families[0]
+                if family not in _seen_families:
+                    _seen_families.add(family)
+                    shared.CUSTOM_FONTS.append(family)
+
+        # If we loaded any custom fonts, auto-enable the custom-fonts-only view
+        # so the font combobox shows only these instead of all system fonts.
+        if shared.CUSTOM_FONTS and not config.let_show_only_custom_fonts_flag:
+            config.let_show_only_custom_fonts_flag = True
 
     if sys.platform == 'win32' and args.headless:
         # font database does not initialise on windows with qpa -offscreen:
@@ -267,7 +285,7 @@ def main():
     else:
         fdb = QFontDatabase()
         shared.FONT_FAMILIES = set(fdb.families())
-
+    
     app_font = QFont('Microsoft YaHei UI')
     if not app_font.exactMatch() or sys.platform == 'darwin':
         app_font = app.font()

@@ -15,6 +15,7 @@ from .textitem import TextBlkItem
 from .text_advanced_format import TextAdvancedFormatPanel
 from .text_style_presets import TextStylePresetPanel
 from . import funcmaps as FM
+from . import shared_widget as SW
 
 
 class LineEdit(QLineEdit):
@@ -223,7 +224,7 @@ class FontFamilyComboBox(QFontComboBox):
         
     def apply_fontfamily(self):
         ffamily = self.currentFont().family()
-        if ffamily in shared.FONT_FAMILIES:
+        if ffamily:
             self.param_changed.emit('font_family', ffamily)
 
     def update_font_list(self, font_list):
@@ -598,12 +599,24 @@ class FontFormatPanel(Widget):
                 if focus_p == self or focus_p.parentWidget() == self:
                     focus_on_fmtoptions = True
             if not focus_on_fmtoptions:
-                # Store the current text block's format before switching to global
                 if self.textblk_item is not None:
-                    # Save all format properties including gradient state
                     self.textblk_item.fontformat = copy.deepcopy(C.active_format)
                 self.textblk_item = None
-                self.set_active_format(self.global_format, multi_select)
+                if multi_select and SW.canvas is not None:
+                    selected = SW.canvas.selected_text_items()
+                    families = set(item.fontformat.font_family for item in selected)
+                    
+                    self.set_active_format(self.global_format, multi_select)
+                    
+                    self.familybox.blockSignals(True)
+                    if len(families) == 1:
+                        common_family = list(families)[0]
+                        self.familybox.setCurrentText(common_family)
+                    elif len(families) > 1:
+                        self.familybox.setCurrentText('')
+                    self.familybox.blockSignals(False)
+                else:
+                    self.set_active_format(self.global_format, multi_select)                
                 self.set_globalfmt_title()
             
         else:
