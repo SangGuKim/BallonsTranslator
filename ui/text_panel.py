@@ -4,7 +4,7 @@ from typing import List
 
 from qtpy.QtWidgets import QLineEdit, QSizePolicy, QHBoxLayout, QVBoxLayout, QFrame, QFontComboBox, QApplication, QPushButton, QLabel, QGroupBox, QCheckBox, QSlider
 from qtpy.QtCore import Signal, Qt
-from qtpy.QtGui import QFocusEvent, QMouseEvent, QTextCursor, QKeyEvent
+from qtpy.QtGui import QFocusEvent, QMouseEvent, QTextCursor, QKeyEvent, QFont
 
 from utils import shared
 from utils import config as C
@@ -403,9 +403,9 @@ class FontFormatPanel(Widget):
         hl3 = QHBoxLayout()
         hl3.setAlignment(Qt.AlignmentFlag.AlignCenter)
         hl3.addLayout(stroke_hlayout)
+        hl3.addLayout(lettersp_hlayout)
         hl3.addWidget(self.lineSpacingLabel)
         hl3.addWidget(self.lineSpacingBox)
-        hl3.addLayout(lettersp_hlayout)
         hl3.setContentsMargins(3, 0, 3, 0)
         hl3.setSpacing(13)
         hl4 = QHBoxLayout()
@@ -534,7 +534,7 @@ class FontFormatPanel(Widget):
         if multi_size:
             font_size += "+"
         self.fontsizebox.fcombobox.setCurrentText(font_size)
-        self.familybox.setCurrentText(font_format.font_family)
+        self.familybox.setCurrentFont(QFont(font_format.font_family))
         self.colorPicker.setPickerColor(font_format.foreground_color())
         self.strokeColorPicker.setPickerColor(font_format.stroke_color())
         self.strokeWidthBox.setValue(font_format.stroke_width)
@@ -609,7 +609,7 @@ class FontFormatPanel(Widget):
         # --- Font family ---
         self.familybox.blockSignals(True)
         if all_same('font_family'):
-            self.familybox.setCurrentText(base.font_family)
+            self.familybox.setCurrentFont(QFont(base.font_family))
         else:
             self.familybox.setCurrentText('')
         self.familybox.blockSignals(False)

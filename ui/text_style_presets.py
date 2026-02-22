@@ -148,7 +148,7 @@ class TextStyleLabel(Widget):
         if len(updated_keys) > 0:
             save_text_styles()
         
-        preview_keys = {'font_family', 'frgb', 'srgb', 'stroke_width'}
+        preview_keys = {'font_family', 'frgb', 'srgb', 'stroke_width', 'font_weight', 'bold', 'italic'}
         for k in updated_keys:
             if k in preview_keys:
                 self.updatePreview()
@@ -174,6 +174,15 @@ class TextStyleLabel(Widget):
     def updatePreview(self):
         font = self.stylelabel.font()
         font.setFamily(self.fontfmt.font_family)
+        fweight = self.fontfmt.font_weight
+        if fweight is None:
+            fweight = 700 if self.fontfmt.bold else 400
+        try:
+            from qtpy.QtGui import QFont as _QFont
+            font.setWeight(_QFont.Weight(fweight))
+        except Exception:
+            font.setWeight(fweight)
+        font.setItalic(self.fontfmt.italic)
         self.stylelabel.setFont(font)
 
         d = int(self.colorw.width() * 0.66)

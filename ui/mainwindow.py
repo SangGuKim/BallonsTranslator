@@ -458,7 +458,7 @@ class MainWindow(mainwindow_cls):
             self.load_textstyle_from_proj_dir(from_proj=True)
 
     def load_textstyle_from_proj_dir(self, from_proj=False):
-        if from_proj:
+        if from_proj and self.imgtrans_proj.directory is not None:
             text_style_path = osp.join(self.imgtrans_proj.directory, 'textstyles.json')
         else:
             text_style_path = 'config/textstyles/default.json'
