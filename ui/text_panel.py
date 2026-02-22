@@ -588,6 +588,106 @@ class FontFormatPanel(Widget):
         if self.global_mode():
             self.set_globalfmt_title()
 
+    def _set_active_format_multiselect(self, selected):
+        """Update format UI for multiple selected text blocks.
+        Shows common value when all blocks share the same value, clears/unchecks otherwise.
+        """
+        if not selected:
+            self.set_active_format(self.global_format)
+            return
+
+        fmts = [item.fontformat for item in selected]
+
+        def all_same(key):
+            vals = [getattr(f, key) for f in fmts]
+            return all(v == vals[0] for v in vals[1:])
+
+        # Use first item's format as base, then override mixed fields
+        base = fmts[0]
+        C.active_format = self.global_format
+
+        # --- Font family ---
+        self.familybox.blockSignals(True)
+        if all_same('font_family'):
+            self.familybox.setCurrentText(base.font_family)
+        else:
+            self.familybox.setCurrentText('')
+        self.familybox.blockSignals(False)
+
+        # --- Font size ---
+        self.fontsizebox.fcombobox.blockSignals(True)
+        if all_same('font_size'):
+            font_size = round(base.font_size, 1)
+            size_str = str(int(font_size)) if int(font_size) == font_size else f'{font_size:.1f}'
+            self.fontsizebox.fcombobox.setCurrentText(size_str)
+        else:
+            self.fontsizebox.fcombobox.setCurrentText('')
+        self.fontsizebox.fcombobox.blockSignals(False)
+
+        # --- Font weight / bold ---
+        self.fontWeightCombo.blockSignals(True)
+        self.formatBtnGroup.boldBtn.blockSignals(True)
+        if all_same('font_weight'):
+            weight = base.font_weight if base.font_weight is not None else (700 if base.bold else 400)
+            self.fontWeightCombo.update_for_family(base.font_family if all_same('font_family') else '')
+            self.fontWeightCombo.set_weight(weight)
+            self.formatBtnGroup.boldBtn.setChecked(weight >= 700)
+        else:
+            self.fontWeightCombo.setCurrentIndex(-1)
+            self.formatBtnGroup.boldBtn.setChecked(False)
+        self.fontWeightCombo.blockSignals(False)
+        self.formatBtnGroup.boldBtn.blockSignals(False)
+
+        # --- Italic / Underline ---
+        self.formatBtnGroup.italicBtn.blockSignals(True)
+        self.formatBtnGroup.underlineBtn.blockSignals(True)
+        if all_same('italic'):
+            self.formatBtnGroup.italicBtn.setChecked(base.italic)
+        else:
+            self.formatBtnGroup.italicBtn.setChecked(False)
+        if all_same('underline'):
+            self.formatBtnGroup.underlineBtn.setChecked(base.underline)
+        else:
+            self.formatBtnGroup.underlineBtn.setChecked(False)
+        self.formatBtnGroup.italicBtn.blockSignals(False)
+        self.formatBtnGroup.underlineBtn.blockSignals(False)
+
+        # --- Alignment ---
+        if all_same('alignment'):
+            self.alignBtnGroup.setAlignment(base.alignment)
+        else:
+            self.alignBtnGroup.blockSignals(True)
+            # deselect all alignment buttons
+            for btn in [self.alignBtnGroup.alignLeftChecker,
+                        self.alignBtnGroup.alignCenterChecker,
+                        self.alignBtnGroup.alignRightChecker]:
+                btn.setChecked(False)
+            self.alignBtnGroup.blockSignals(False)
+
+        # --- Vertical ---
+        self.verticalChecker.blockSignals(True)
+        self.verticalChecker.setChecked(base.vertical if all_same('vertical') else False)
+        self.verticalChecker.blockSignals(False)
+
+        # --- Color ---
+        if all_same('frgb'):
+            self.colorPicker.setPickerColor(base.foreground_color())
+        # stroke
+        if all_same('stroke_width'):
+            self.strokeWidthBox.blockSignals(True)
+            self.strokeWidthBox.setValue(base.stroke_width)
+            self.strokeWidthBox.blockSignals(False)
+        if all_same('srgb'):
+            self.strokeColorPicker.setPickerColor(base.stroke_color())
+
+        # --- Line / letter spacing ---
+        self.lineSpacingBox.blockSignals(True)
+        self.lineSpacingBox.setValue(base.line_spacing if all_same('line_spacing') else self.global_format.line_spacing)
+        self.lineSpacingBox.blockSignals(False)
+        self.letterSpacingBox.blockSignals(True)
+        self.letterSpacingBox.setValue(base.letter_spacing if all_same('letter_spacing') else self.global_format.letter_spacing)
+        self.letterSpacingBox.blockSignals(False)
+
     def set_textblk_item(self, textblk_item: TextBlkItem = None, multi_select:bool=False):
         if textblk_item is None:
             focus_w = self.app.focusWidget()
@@ -604,17 +704,7 @@ class FontFormatPanel(Widget):
                 self.textblk_item = None
                 if multi_select and SW.canvas is not None:
                     selected = SW.canvas.selected_text_items()
-                    families = set(item.fontformat.font_family for item in selected)
-                    
-                    self.set_active_format(self.global_format, multi_select)
-                    
-                    self.familybox.blockSignals(True)
-                    if len(families) == 1:
-                        common_family = list(families)[0]
-                        self.familybox.setCurrentText(common_family)
-                    elif len(families) > 1:
-                        self.familybox.setCurrentText('')
-                    self.familybox.blockSignals(False)
+                    self._set_active_format_multiselect(selected)
                 else:
                     self.set_active_format(self.global_format, multi_select)                
                 self.set_globalfmt_title()

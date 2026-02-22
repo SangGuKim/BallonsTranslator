@@ -688,6 +688,7 @@ class TextBlkItem(QGraphicsTextItem):
 
         self.document().setDefaultFont(font)
         format.setFont(font)
+        format.setFontWeight(QFont.Weight(fweight))
         if ffmat.gradient_enabled:
             gradient = self.get_text_gradient(ffmat)
             format.setForeground(gradient)
