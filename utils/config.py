@@ -252,9 +252,17 @@ def load_config(config_path: str = shared.CONFIG_PATH):
     global pcfg
     pcfg.merge(config)
 
-    p = pcfg.text_styles_path
-    if not osp.exists(pcfg.text_styles_path):
-        dp = osp.join(shared.DEFAULT_TEXTSTYLE_DIR, 'default.json')
+    dp = osp.join(shared.DEFAULT_TEXTSTYLE_DIR, 'default.json')
+    # When per-project style is enabled, always start from default.json at
+    # launch (before any project is opened). The project-specific path will
+    # be set later in load_textstyle_from_proj_dir when a project is opened.
+    if pcfg.let_textstyle_indep_flag:
+        p = dp
+        pcfg.text_styles_path = dp
+    else:
+        p = pcfg.text_styles_path
+
+    if not osp.exists(p):
         if p != dp and osp.exists(dp):
             p = dp
             LOGGER.warning(f'Text style {p} does not exist, use the default from {dp}.')
