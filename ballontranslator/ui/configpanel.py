@@ -347,6 +347,7 @@ class ConfigPanel(Widget):
     prepare_selected_modules = Signal()
     reload_textstyle = Signal(bool)
     show_only_custom_font = Signal(bool)
+    group_font_faces_changed = Signal(bool)
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -480,6 +481,8 @@ class ConfigPanel(Widget):
 
         self.let_show_only_custom_fonts, sublock = generalConfigPanel.addCheckBox(self.tr("Show only custom fonts"))
         self.let_show_only_custom_fonts.stateChanged.connect(self.on_show_only_custom_fonts)
+        self.let_group_font_faces, sublock = generalConfigPanel.addCheckBox(self.tr("Group font weights by family"))
+        self.let_group_font_faces.stateChanged.connect(self.on_group_font_faces_changed)
 
         generalConfigPanel.addTextLabel(label_save)
         self.rst_imgformat_combobox, imsave_sublock = generalConfigPanel.addCombobox(['PNG', 'JPG', 'WEBP', 'JXL'], self.tr('Result image format'))
@@ -615,6 +618,10 @@ class ConfigPanel(Widget):
         pcfg.let_show_only_custom_fonts_flag = self.let_show_only_custom_fonts.isChecked()
         self.show_only_custom_font.emit(pcfg.let_show_only_custom_fonts_flag)
 
+    def on_group_font_faces_changed(self):
+        pcfg.let_group_font_faces_flag = self.let_group_font_faces.isChecked()
+        self.group_font_faces_changed.emit(pcfg.let_group_font_faces_flag)
+
     def focusOnTranslator(self):
         idx0, idx1 = self.trans_sub_block.idx0, self.trans_sub_block.idx1
         self.configTable.setCurrentItem(idx0, idx1)
@@ -667,5 +674,6 @@ class ConfigPanel(Widget):
         self.empty_runcache_checker.setChecked(pcfg.module.empty_runcache)
         self.package_auto_install_checker.setChecked(pcfg.package_manager.auto_install_missing_packages)
         self.let_show_only_custom_fonts.setChecked(pcfg.let_show_only_custom_fonts_flag)
+        self.let_group_font_faces.setChecked(pcfg.let_group_font_faces_flag)
 
         self.blockSignals(False)

@@ -1,7 +1,6 @@
 from typing import List, Callable, Dict
 import copy
 
-from qtpy.QtGui import QFont
 try:
     from qtpy.QtWidgets import QUndoCommand
 except:
@@ -98,10 +97,12 @@ def ffmt_change_font_weight(param_name: str, values: str, act_ffmt: FontFormat, 
 @font_formating()
 def ffmt_change_bold(param_name: str, values: str, act_ffmt: FontFormat, is_global: bool, blkitems: List[TextBlkItem] = None, **kwargs):
     set_kwargs = global_default_set_kwargs if is_global else local_default_set_kwargs
-    values = [QFont.Weight.Bold if value else QFont.Weight.Normal for value in values]
-    # ffmt_change_weight('weight', values, act_ffmt, is_global, blkitems, **kwargs)
-    for blkitem, value in zip(blkitems, values):
-        blkitem.setFontWeight(value, **set_kwargs)
+    weights = [700 if value else 400 for value in values]
+    if weights:
+        act_ffmt.font_weight = weights[0]
+    for blkitem, weight in zip(blkitems, weights):
+        blkitem.fontformat.font_weight = weight
+        blkitem.setFontWeight(weight, **set_kwargs)
 
 @font_formating(push_undostack=True)
 def ffmt_change_letter_spacing(param_name: str, values: str, act_ffmt: FontFormat, is_global: bool, blkitems: List[TextBlkItem], **kwargs):
