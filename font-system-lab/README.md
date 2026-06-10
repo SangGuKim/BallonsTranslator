@@ -24,6 +24,17 @@ conda run -n BallonsTranslator python font-system-lab\tools\dump_font_info.py --
 ```
 
 macOS에서도 같은 명령을 사용하되, 해당 환경의 conda env 이름이 다르면 `-n` 값만 바꾼다.
+PyQt6/macOS에서는 `QFontDatabase.addApplicationFont()`가 상대경로 font path를
+실패시킬 수 있으므로, macOS 검증은 `--fonts-dir "$(pwd)/fonts"`처럼 절대경로를
+넘긴다.
+
+```bash
+conda run -n bt python font-system-lab/tools/probe_font_registry_logic.py --fonts-dir "$(pwd)/fonts" --output tmp/font-registry-probe-macos.md --limit 200
+conda run -n bt python font-system-lab/tools/probe_font_registry_logic.py --fonts-dir "$(pwd)/fonts" --format json --output tmp/font-registry-probe-macos.json
+conda run -n bt python font-system-lab/tools/probe_font_registry_logic.py --fonts-dir "$(pwd)/fonts" --system-alias-table font-system-lab/data/system-font-aliases.ko-kr.example.json --output tmp/font-registry-probe-alias-macos.md --limit 200
+conda run -n bt python font-system-lab/tools/probe_font_registry_logic.py --fonts-dir "$(pwd)/fonts" --custom-group-table font-system-lab/data/custom-font-groups.ko-kr.example.json --output tmp/font-registry-probe-custom-groups-macos.md --limit 200
+conda run -n bt python font-system-lab/tools/dump_font_info.py --fonts-dir "$(pwd)/fonts" --output tmp/font-dump-macos.json
+```
 
 ## 판정 기준
 
@@ -41,3 +52,19 @@ macOS에서도 같은 명령을 사용하되, 해당 환경의 conda env 이름�
 
 raw JSON은 정보량이 많으므로, 일반 검토는 probe Markdown을 먼저 보고 이상 항목만
 `dump_font_info.py --family-filter`로 좁혀 확인한다.
+
+## 확인된 macOS 결과
+
+2026-06-10 Apple Silicon macOS(M4, Miniforge `bt`, Python 3.12.13, PyQt6 6.11.0)
+검증 결과는 설계한 정책과 일치했다.
+
+- custom faces 54개가 grouped picker entry 25개로 정리되었다.
+- macOS Qt는 custom font family를 대체로 하나씩만 반환했다.
+- system non-ASCII family와 system warning은 없었다.
+- `Korail Round Gothic Bold/Light/Medium`은 기본 상태에서 분리되고, optional
+  custom group table을 넣었을 때만 `Korail Round Gothic`으로 묶였다.
+- optional custom group table을 사용해도 원래 face canonical은 보존되었다.
+- `온글잎 윤우체`는 canonical과 Qt render family가 달라 resolver 검증 케이스로
+  남았다.
+
+Windows 결과는 `tmp/font-system-lab-windows-backup/`에 백업해 두었다.

@@ -135,3 +135,54 @@ conda run -n BallonsTranslator python font-system-lab/tools/dump_font_info.py --
 
 macOS 결과가 통과하면 1차 구현 설계는 충분히 안정적이라고 본다. Linux 검증은
 추가 확신용으로 수행한다.
+
+## macOS 검증 결과
+
+2026-06-10에 Apple Silicon macOS(M4, Miniforge env `bt`, Python 3.12.13,
+PyQt6 6.11.0)에서 검증했다. 결과 파일은 다음 위치에 생성했다.
+
+```text
+tmp/font-registry-probe-macos.md
+tmp/font-registry-probe-macos.json
+tmp/font-registry-probe-custom-groups-macos.md
+tmp/font-registry-probe-alias-macos.md
+tmp/font-dump-macos.json
+```
+
+기존 Windows 결과는 다음 위치에 백업했다.
+
+```text
+tmp/font-system-lab-windows-backup/
+```
+
+macOS 최종 요약:
+
+- custom faces: 54
+- grouped picker entries: 25
+- separate picker entries: 54
+- Qt system families: 181
+- Qt custom families: 25
+- non-ASCII system families: 0
+- system warning entries: 0
+- custom/system conflicts: 0
+
+검증 결론:
+
+- macOS에서는 custom font마다 Qt family가 대체로 하나씩만 반환된다.
+- `Korail Round Gothic Bold/Light/Medium`은 기본 probe에서 분리되고,
+  optional custom group table을 넣었을 때만 `Korail Round Gothic`으로 묶인다.
+- optional custom group table을 사용해도 face canonical
+  `Korail Round Gothic Bold/Light/Medium`은 보존된다.
+- `온글잎 윤우체`는 canonical `Ownglyph YoonwooChae`와 Qt render family
+  `온글잎 윤우체`가 달라 `qt_family_differs_from_canonical` 경고가 붙었다.
+  이는 canonical/display/qt_family 분리와 resolver가 필요하다는 좋은 검증
+  케이스이다.
+- Windows와 macOS 모두 현재 설계 정책을 지지한다. 구현으로 넘어가도 된다.
+
+macOS 주의사항:
+
+- PyQt6/macOS에서 `QFontDatabase.addApplicationFont()`에 상대경로를 넘기면
+  실패할 수 있다. 실제 앱 구현과 검증 스크립트 실행에서는 font path를
+  `Path(...).resolve()` 등으로 절대경로화해서 넘기는 것이 안전하다.
+- 검증 중 pasteboard/notification 관련 macOS 경고가 stderr에 출력될 수 있으나,
+  스크립트 종료 코드가 0이고 산출물이 생성되면 검증 결과로 사용할 수 있다.
