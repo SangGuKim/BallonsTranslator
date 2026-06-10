@@ -2,9 +2,9 @@ import copy
 import sys
 from typing import List
 
-from qtpy.QtWidgets import QLineEdit, QSizePolicy, QHBoxLayout, QVBoxLayout, QFrame, QFontComboBox, QApplication, QPushButton, QLabel, QGroupBox, QCheckBox, QSlider
+from qtpy.QtWidgets import QLineEdit, QSizePolicy, QHBoxLayout, QVBoxLayout, QFrame, QApplication, QPushButton, QLabel, QGroupBox, QCheckBox, QSlider, QComboBox
 from qtpy.QtCore import Signal, Qt
-from qtpy.QtGui import QFocusEvent, QMouseEvent, QTextCursor, QKeyEvent
+from qtpy.QtGui import QFocusEvent, QMouseEvent, QTextCursor, QKeyEvent, QFont
 
 from ballontranslator.utils import shared
 from ballontranslator.utils import config as C
@@ -207,30 +207,89 @@ class FontSizeBox(QFrame):
                 self.fcombobox.setCurrentText(str(newsize)+"+")
     
 
-class FontFamilyComboBox(QFontComboBox):
+class FontFamilyComboBox(QComboBox):
     param_changed = Signal(str, object)
     def __init__(self, emit_if_focused=True, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        self.currentFontChanged.connect(self.on_fontfamily_changed)
+        self.setEditable(True)
+        self.currentIndexChanged.connect(self.on_fontfamily_changed)
         self.lineedit = lineedit = LineEdit(parent=self)
         lineedit.return_pressed.connect(self.on_return_pressed)
+        lineedit.editingFinished.connect(self.apply_fontfamily)
         self.setLineEdit(lineedit)
         self.emit_if_focused = emit_if_focused
         self.return_pressed = False
+        self._using_font_entries = False
         
     def apply_fontfamily(self):
-        ffamily = self.currentFont().family()
-        if ffamily in shared.FONT_FAMILIES:
+        ffamily = self._current_storage_family()
+        if ffamily:
             self.param_changed.emit('font_family', ffamily)
 
     def update_font_list(self, font_list):
-        self.currentFontChanged.disconnect(self.on_fontfamily_changed)
-        current_font = self.currentFont().family()
+        self._using_font_entries = False
+        self.currentIndexChanged.disconnect(self.on_fontfamily_changed)
+        current_font = self._current_storage_family()
         self.clear()
-        self.addItems(font_list)
-        self.addItems([current_font])
+        for family in font_list:
+            index = self.count()
+            self.addItem(family)
+            self.setItemData(index, QFont(family), Qt.ItemDataRole.FontRole)
+        if current_font and current_font not in set(font_list):
+            index = self.count()
+            self.addItem(current_font)
+            self.setItemData(index, QFont(current_font), Qt.ItemDataRole.FontRole)
         self.setCurrentText(current_font)
-        self.currentFontChanged.connect(self.on_fontfamily_changed)
+        self.currentIndexChanged.connect(self.on_fontfamily_changed)
+
+    def update_font_entries(self, entries):
+        """Update picker with registry entries.
+
+        The visible text is localized ``display_family`` while the emitted value
+        remains the storage-safe canonical family. Pseudo custom groups resolve
+        to the selected face canonical for the active weight.
+        """
+
+        self._using_font_entries = True
+        self.currentIndexChanged.disconnect(self.on_fontfamily_changed)
+        current_font = self._current_storage_family()
+        self.clear()
+        for entry in entries:
+            index = self.count()
+            self.addItem(entry.display_family, entry)
+            self.setItemData(index, QFont(entry.qt_family), Qt.ItemDataRole.FontRole)
+            details = [entry.source, f'qt: {entry.qt_family}']
+            if entry.weights:
+                details.append('weights: ' + ', '.join(str(weight) for weight in entry.weights))
+            if entry.is_pseudo_group:
+                details.append('stores selected face canonical')
+            self.setItemData(index, '; '.join(details), Qt.ItemDataRole.ToolTipRole)
+        self.set_current_family(current_font)
+        self.currentIndexChanged.connect(self.on_fontfamily_changed)
+
+    def set_current_family(self, family: str):
+        if not family:
+            self.setCurrentText('')
+            return
+        target_entry = None
+        if shared.FONT_REGISTRY is not None:
+            target_entry = shared.FONT_REGISTRY.resolve_family(family).entry
+        for index in range(self.count()):
+            entry = self.itemData(index)
+            if entry is target_entry:
+                self.setCurrentIndex(index)
+                return
+            if hasattr(entry, 'canonical_family') and family in {entry.canonical_family, entry.display_family, entry.qt_family}:
+                self.setCurrentIndex(index)
+                return
+        self.setCurrentText(family)
+
+    def _current_storage_family(self):
+        entry = self.itemData(self.currentIndex()) if self._using_font_entries else None
+        if hasattr(entry, 'storage_family_for_weight'):
+            weight = getattr(C.active_format, 'font_weight', None)
+            return entry.storage_family_for_weight(weight)
+        return self.currentText().strip()
 
     def on_return_pressed(self):
         self.return_pressed = True
@@ -481,7 +540,7 @@ class FontFormatPanel(Widget):
         if multi_size:
             font_size += "+"
         self.fontsizebox.fcombobox.setCurrentText(font_size)
-        self.familybox.setCurrentText(font_format.font_family)
+        self.familybox.set_current_family(font_format.font_family)
         self.colorPicker.setPickerColor(font_format.foreground_color())
         self.strokeColorPicker.setPickerColor(font_format.stroke_color())
         self.strokeWidthBox.setValue(font_format.stroke_width)

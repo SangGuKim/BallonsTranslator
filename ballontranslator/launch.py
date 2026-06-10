@@ -258,12 +258,20 @@ def main():
     LOGGER.info(f'set display language to {lang}')
 
     # Fonts
-    # Load custom fonts if they exist
+    # Capture system families before custom fonts are registered so the runtime
+    # registry can keep system/custom sources separate.
+    if shared.FLAG_QT6:
+        qfont_db = QFontDatabase
+        system_families = sorted(QFontDatabase.families(), key=str.casefold)
+    else:
+        qfont_db = QFontDatabase()
+        system_families = sorted(qfont_db.families(), key=str.casefold)
+
+    font_paths = []
     if osp.exists(PATH_FONTS):
-        for fp in find_all_files_recursive(PATH_FONTS, FONT_EXTS):
-            fnt_idx = QFontDatabase.addApplicationFont(fp)
-            if fnt_idx >= 0:
-                shared.CUSTOM_FONTS.append(QFontDatabase.applicationFontFamilies(fnt_idx)[0])
+        # macOS/PyQt6 can fail addApplicationFont() for relative paths, so keep
+        # resolved paths for both registry metadata and Qt application loading.
+        font_paths = [str(Path(fp).resolve()) for fp in find_all_files_recursive(PATH_FONTS, FONT_EXTS)]
 
     if sys.platform == 'win32' and args.headless:
         # font database does not initialise on windows with qpa -offscreen:
@@ -273,13 +281,21 @@ def main():
         for fd in font_dir_list:
             fp_list = find_all_files_recursive(fd, FONT_EXTS)
             for fp in fp_list:
-                fnt_idx = QFontDatabase.addApplicationFont(fp)
+                QFontDatabase.addApplicationFont(str(Path(fp).resolve()))
+        system_families = sorted(qfont_db.families(), key=str.casefold)
 
-    if shared.FLAG_QT6:
-        shared.FONT_FAMILIES = set(f for f in QFontDatabase.families())
-    else:
-        fdb = QFontDatabase()
-        shared.FONT_FAMILIES = set(fdb.families())
+    from ballontranslator.utils.font_registry import build_font_registry
+    shared.FONT_REGISTRY = build_font_registry(
+        qfont_db,
+        font_paths,
+        system_families,
+        locale=shared.DEFAULT_DISPLAY_LANG,
+    )
+    # Compatibility adapters for older plain family-list paths. The
+    # registry keeps localized display names separately; these lists stay
+    # renderable until the picker becomes model-backed.
+    shared.CUSTOM_FONTS = shared.FONT_REGISTRY.legacy_family_list(only_custom=True)
+    shared.FONT_FAMILIES = set(shared.FONT_REGISTRY.legacy_family_list(only_custom=False))
 
     app_font = QFont('Microsoft YaHei UI')
     if not app_font.exactMatch() or sys.platform == 'darwin':
