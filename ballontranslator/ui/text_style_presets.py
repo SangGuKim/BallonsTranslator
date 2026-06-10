@@ -2,11 +2,12 @@ from typing import List
 
 from qtpy.QtWidgets import QMenu, QMessageBox, QStackedLayout, QGraphicsDropShadowEffect, QLineEdit, QSizePolicy, QHBoxLayout, QVBoxLayout, QPushButton, QLabel
 from qtpy.QtCore import Signal, Qt, QRectF
-from qtpy.QtGui import QMouseEvent, QFontMetrics, QColor, QPixmap, QPainter, QContextMenuEvent
+from qtpy.QtGui import QMouseEvent, QFont, QFontMetrics, QColor, QPixmap, QPainter, QContextMenuEvent
 
 
 from ballontranslator.utils.fontformat import FontFormat
 from ballontranslator.utils.config import save_text_styles, text_styles
+from ballontranslator.utils import shared
 from ballontranslator.utils import config as C
 from .custom_widget import PanelArea, Widget, FlowLayout
 from .misc import themed_icon_url
@@ -149,7 +150,7 @@ class TextStyleLabel(Widget):
         if len(updated_keys) > 0:
             save_text_styles()
         
-        preview_keys = {'font_family', 'frgb', 'srgb', 'stroke_width'}
+        preview_keys = {'font_family', 'font_weight', 'bold', 'italic', 'frgb', 'srgb', 'stroke_width'}
         for k in updated_keys:
             if k in preview_keys:
                 self.updatePreview()
@@ -174,7 +175,19 @@ class TextStyleLabel(Widget):
 
     def updatePreview(self):
         font = self.stylelabel.font()
-        font.setFamily(self.fontfmt.font_family)
+        weight = self.fontfmt.font_weight
+        if weight is None:
+            weight = 700 if self.fontfmt.bold else 400
+        family = self.fontfmt.font_family
+        registry = getattr(shared, 'FONT_REGISTRY', None)
+        if registry is not None:
+            family = registry.resolve_family(family, weight).qt_family or family
+        font.setFamily(family)
+        try:
+            font.setWeight(QFont.Weight(int(weight)))
+        except (TypeError, ValueError):
+            font.setWeight(int(weight))
+        font.setItalic(self.fontfmt.italic)
         self.stylelabel.setFont(font)
 
         d = int(self.colorw.width() * 0.66)

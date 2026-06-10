@@ -162,27 +162,67 @@ class FontRegistry:
     custom_entries: List[FontEntry] = field(default_factory=list)
     system_entries: List[FontEntry] = field(default_factory=list)
     entries_by_key: Dict[str, FontEntry] = field(default_factory=dict)
+    faces_by_key: Dict[str, tuple] = field(default_factory=dict)
 
     def __post_init__(self):
         self.rebuild_index()
 
     def rebuild_index(self):
         self.entries_by_key = {}
+        self.faces_by_key = {}
         for entry in [*self.system_entries, *self.custom_entries]:
             keys = {entry.canonical_family, entry.display_family, entry.qt_family, *entry.aliases}
             for face in entry.faces:
-                keys.update({face.canonical_family, face.display_family, face.qt_family, *face.aliases})
+                face_keys = {face.canonical_family, face.display_family, face.qt_family, *face.aliases}
+                keys.update(face_keys)
+                for key in face_keys:
+                    if key:
+                        self.faces_by_key[normalize_key(key)] = (entry, face)
             for key in keys:
                 if key:
                     self.entries_by_key[normalize_key(key)] = entry
 
     def entries(self, only_custom: bool = False) -> List[FontEntry]:
+        return self.grouped_entries(only_custom)
+
+    def grouped_entries(self, only_custom: bool = False) -> List[FontEntry]:
         if only_custom:
             return sorted(self.custom_entries, key=lambda entry: entry.display_family.casefold())
 
         custom_keys = {normalize_key(entry.canonical_family) for entry in self.custom_entries}
         system = [entry for entry in self.system_entries if normalize_key(entry.canonical_family) not in custom_keys]
         return sorted([*system, *self.custom_entries], key=lambda entry: entry.display_family.casefold())
+
+    def separate_face_entries(self, only_custom: bool = False) -> List[FontEntry]:
+        entries = []
+        custom_keys = {normalize_key(entry.canonical_family) for entry in self.custom_entries}
+        system_entries = [entry for entry in self.system_entries if normalize_key(entry.canonical_family) not in custom_keys]
+        source_entries = self.custom_entries if only_custom else [*system_entries, *self.custom_entries]
+        for entry in source_entries:
+            if not entry.faces:
+                entries.append(entry)
+                continue
+            for face in entry.faces:
+                display_family = face.display_family
+                if normalize_key(display_family) == normalize_key(entry.display_family) and face.style_name:
+                    display_family = f'{display_family} {face.style_name}'
+                entries.append(
+                    FontEntry(
+                        canonical_family=face.storage_family,
+                        display_family=display_family,
+                        qt_family=face.qt_family,
+                        source=entry.source,
+                        file_paths=list(entry.file_paths),
+                        weights=[face.weight] if face.weight is not None else [],
+                        styles=[face.style_name] if face.style_name else [],
+                        faces=[face],
+                        is_scalable=entry.is_scalable,
+                        aliases={alias for alias in {face.canonical_family, face.display_family, face.qt_family, *face.aliases} if alias},
+                        alias_source=entry.alias_source,
+                        warnings=list(entry.warnings),
+                    )
+                )
+        return sorted(entries, key=lambda item: item.display_family.casefold())
 
     def legacy_family_list(self, only_custom: bool = False) -> List[str]:
         """Return renderable family strings for the old QFontComboBox path."""
@@ -197,10 +237,12 @@ class FontRegistry:
         return families
 
     def resolve_family(self, family: str, weight: Optional[int] = None) -> ResolvedFont:
-        entry = self.entries_by_key.get(normalize_key(family))
+        key = normalize_key(family)
+        entry = self.entries_by_key.get(key)
         if entry is None:
             return ResolvedFont(family, family, family)
-        face = entry.face_for_weight(weight)
+        face_match = self.faces_by_key.get(key)
+        face = face_match[1] if face_match is not None and face_match[0] is entry else entry.face_for_weight(weight)
         qt_family = face.qt_family if face is not None else entry.qt_family
         canonical = face.storage_family if entry.is_pseudo_group and face is not None else entry.canonical_family
         return ResolvedFont(family, canonical, qt_family, entry=entry, face=face)

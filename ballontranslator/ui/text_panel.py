@@ -9,7 +9,7 @@ from qtpy.QtGui import QFocusEvent, QMouseEvent, QTextCursor, QKeyEvent, QFont
 from ballontranslator.utils import shared
 from ballontranslator.utils import config as C
 from ballontranslator.utils.fontformat import FontFormat, px2pt, LineSpacingType
-from .custom_widget import Widget, ColorPickerLabel, ClickableLabel, CheckableLabel, TextCheckerLabel, AlignmentChecker, QFontChecker, SizeComboBox, SizeControlLabel
+from .custom_widget import Widget, ColorPickerLabel, ClickableLabel, CheckableLabel, TextCheckerLabel, AlignmentChecker, QFontChecker, SizeComboBox, SizeControlLabel, FontWeightComboBox
 from .textitem import TextBlkItem
 from .text_advanced_format import TextAdvancedFormatPanel
 from .text_style_presets import TextStylePresetPanel
@@ -106,7 +106,7 @@ class AlignmentBtnGroup(QFrame):
 
 
 class FormatGroupBtn(QFrame):
-    param_changed = Signal(str, bool)
+    param_changed = Signal(str, object)
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.boldBtn = QFontChecker(self)
@@ -125,7 +125,7 @@ class FormatGroupBtn(QFrame):
         hlayout.setSpacing(0)
 
     def setBold(self):
-        self.param_changed.emit('bold', self.boldBtn.isChecked())
+        self.param_changed.emit('font_weight', 700 if self.boldBtn.isChecked() else 400)
 
     def setItalic(self):
         self.param_changed.emit('italic', self.italicBtn.isChecked())
@@ -229,7 +229,7 @@ class FontFamilyComboBox(QComboBox):
     def update_font_list(self, font_list):
         self._using_font_entries = False
         self.currentIndexChanged.disconnect(self.on_fontfamily_changed)
-        current_font = self._current_storage_family()
+        current_font = self._current_storage_family() or getattr(C.active_format, 'font_family', '')
         self.clear()
         for family in font_list:
             index = self.count()
@@ -252,12 +252,18 @@ class FontFamilyComboBox(QComboBox):
 
         self._using_font_entries = True
         self.currentIndexChanged.disconnect(self.on_fontfamily_changed)
-        current_font = self._current_storage_family()
+        current_font = self._current_storage_family() or getattr(C.active_format, 'font_family', '')
         self.clear()
         for entry in entries:
             index = self.count()
             self.addItem(entry.display_family, entry)
-            self.setItemData(index, QFont(entry.qt_family), Qt.ItemDataRole.FontRole)
+            preview_font = QFont(entry.qt_family)
+            if len(entry.weights) == 1:
+                try:
+                    preview_font.setWeight(QFont.Weight(int(entry.weights[0])))
+                except (TypeError, ValueError):
+                    preview_font.setWeight(int(entry.weights[0]))
+            self.setItemData(index, preview_font, Qt.ItemDataRole.FontRole)
             details = [entry.source, f'qt: {entry.qt_family}']
             if entry.weights:
                 details.append('weights: ' + ', '.join(str(weight) for weight in entry.weights))
@@ -272,15 +278,19 @@ class FontFamilyComboBox(QComboBox):
             self.setCurrentText('')
             return
         target_entry = None
+        target_weight = getattr(C.active_format, 'font_weight', None)
         if shared.FONT_REGISTRY is not None:
-            target_entry = shared.FONT_REGISTRY.resolve_family(family).entry
+            target_entry = shared.FONT_REGISTRY.resolve_family(family, target_weight).entry
         for index in range(self.count()):
             entry = self.itemData(index)
-            if entry is target_entry:
+            if not hasattr(entry, 'canonical_family'):
+                continue
+            entry_families = {entry.canonical_family, entry.display_family, entry.qt_family}
+            matches_family = entry is target_entry or family in entry_families
+            matches_weight = target_weight is None or not entry.weights or int(target_weight) in {int(weight) for weight in entry.weights}
+            if matches_family and matches_weight:
                 self.setCurrentIndex(index)
-                return
-            if hasattr(entry, 'canonical_family') and family in {entry.canonical_family, entry.display_family, entry.qt_family}:
-                self.setCurrentIndex(index)
+                self.lineEdit().setText(self.itemText(index))
                 return
         self.setCurrentText(family)
 
@@ -290,6 +300,10 @@ class FontFamilyComboBox(QComboBox):
             weight = getattr(C.active_format, 'font_weight', None)
             return entry.storage_family_for_weight(weight)
         return self.currentText().strip()
+
+    def current_entry(self):
+        entry = self.itemData(self.currentIndex()) if self._using_font_entries else None
+        return entry if hasattr(entry, 'weights') else None
 
     def on_return_pressed(self):
         self.return_pressed = True
@@ -320,6 +334,7 @@ class FontFormatPanel(Widget):
         self.familybox.setObjectName("FontFamilyBox")
         self.familybox.setToolTip(self.tr("Font Family"))
         self.familybox.param_changed.connect(self.on_param_changed)
+        self.familybox.param_changed.connect(self._on_family_changed_for_weight)
         self.familybox.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
         self.fontsizebox = FontSizeBox(self)
@@ -327,6 +342,11 @@ class FontFormatPanel(Widget):
         self.fontsizebox.setObjectName("FontSizeBox")
         self.fontsizebox.fcombobox.setToolTip(self.tr("Change font size"))
         self.fontsizebox.param_changed.connect(self.on_param_changed)
+
+        self.fontWeightCombo = FontWeightComboBox(self)
+        self.fontWeightCombo.setToolTip(self.tr("Font Weight"))
+        self.fontWeightCombo.param_changed.connect(self.on_font_weight_changed)
+        self.group_font_faces = True
         
         self.lineSpacingLabel = SizeControlLabel(self, direction=1, transparent_bg=False)
         self.lineSpacingLabel.setObjectName("lineSpacingLabel")
@@ -348,7 +368,7 @@ class FontFormatPanel(Widget):
         self.alignBtnGroup.param_changed.connect(self.on_param_changed)
 
         self.formatBtnGroup = FormatGroupBtn(self)
-        self.formatBtnGroup.param_changed.connect(self.on_param_changed)
+        self.formatBtnGroup.param_changed.connect(self.on_format_btn_changed)
 
         self.verticalChecker = QFontChecker(self)
         self.verticalChecker.setObjectName("FontVerticalChecker")
@@ -439,8 +459,7 @@ class FontFormatPanel(Widget):
         hl1 = QHBoxLayout()
         hl1.addWidget(self.familybox)
         hl1.addWidget(self.fontsizebox)
-        hl1.addWidget(self.lineSpacingLabel)
-        hl1.addWidget(self.lineSpacingBox)
+        hl1.addWidget(self.fontWeightCombo)
         hl1.setSpacing(4)
         hl1.setContentsMargins(0, 12, 0, 0)
         hl2 = QHBoxLayout()
@@ -455,6 +474,8 @@ class FontFormatPanel(Widget):
         hl3.setAlignment(Qt.AlignmentFlag.AlignCenter)
         hl3.addLayout(stroke_hlayout)
         hl3.addLayout(lettersp_hlayout)
+        hl3.addWidget(self.lineSpacingLabel)
+        hl3.addWidget(self.lineSpacingBox)
         hl3.setContentsMargins(3, 0, 3, 0)
         hl3.setSpacing(13)
         hl4 = QHBoxLayout()
@@ -503,6 +524,67 @@ class FontFormatPanel(Widget):
         else:
             func(param_name, value, C.active_format, is_global=False, blkitems=self.textblk_item, set_focus=True, **func_kwargs)
 
+    def on_format_btn_changed(self, param_name: str, value):
+        if param_name == 'font_weight':
+            self.on_font_weight_changed(param_name, self._nearest_available_weight(value))
+        else:
+            self.on_param_changed(param_name, value)
+
+    def on_font_weight_changed(self, param_name: str, weight: int):
+        weight = self._nearest_available_weight(weight)
+        self._sync_weight_controls(weight)
+        storage_family = self._pseudo_group_storage_family(weight)
+        if storage_family and storage_family != C.active_format.font_family:
+            self.on_param_changed('font_family', storage_family)
+        self.on_param_changed('font_weight', weight)
+
+    def _nearest_available_weight(self, weight: int) -> int:
+        weights = [self.fontWeightCombo.itemData(index) for index in range(self.fontWeightCombo.count())]
+        weights = [int(item) for item in weights if item is not None]
+        if not weights:
+            return int(weight)
+        return min(weights, key=lambda item: (abs(item - int(weight)), item))
+
+    def _sync_weight_controls(self, weight: int, update_active: bool = True):
+        is_bold = weight >= 700
+        if update_active:
+            C.active_format.bold = is_bold
+        self.fontWeightCombo.blockSignals(True)
+        self.fontWeightCombo.set_weight(weight)
+        self.fontWeightCombo.blockSignals(False)
+        self.formatBtnGroup.boldBtn.blockSignals(True)
+        self.formatBtnGroup.boldBtn.setChecked(is_bold)
+        self.formatBtnGroup.boldBtn.blockSignals(False)
+
+    def _pseudo_group_storage_family(self, weight: int) -> str:
+        entry = self.familybox.current_entry()
+        if entry is None or not getattr(entry, 'is_pseudo_group', False):
+            return ''
+        return entry.storage_family_for_weight(weight)
+
+    def _refresh_weight_combo(self, font_format: FontFormat = None):
+        font_format = font_format or C.active_format
+        entry = self.familybox.current_entry()
+        weights = entry.weights if entry is not None else []
+        weight = font_format.font_weight
+        if weight is None:
+            weight = 700 if font_format.bold else 400
+        self.fontWeightCombo.update_weights(weights, weight)
+        self._sync_weight_controls(self.fontWeightCombo.current_weight(), update_active=False)
+
+    def _on_family_changed_for_weight(self, param_name: str, family: str):
+        if param_name == 'font_family':
+            self._refresh_weight_combo(C.active_format)
+            weight = self.fontWeightCombo.current_weight()
+            active_weight = C.active_format.font_weight if C.active_format.font_weight is not None else (700 if C.active_format.bold else 400)
+            if weight != active_weight:
+                self._sync_weight_controls(weight)
+                self.on_param_changed('font_weight', weight)
+
+    def set_font_grouping_mode(self, group_font_faces: bool):
+        self.group_font_faces = group_font_faces
+        self.fontWeightCombo.setVisible(group_font_faces)
+
     def update_text_style_label(self):
         if self.global_mode():
             active_text_style_label = self.active_text_style_label()
@@ -541,13 +623,15 @@ class FontFormatPanel(Widget):
             font_size += "+"
         self.fontsizebox.fcombobox.setCurrentText(font_size)
         self.familybox.set_current_family(font_format.font_family)
+        self._refresh_weight_combo(font_format)
         self.colorPicker.setPickerColor(font_format.foreground_color())
         self.strokeColorPicker.setPickerColor(font_format.stroke_color())
         self.strokeWidthBox.setValue(font_format.stroke_width)
         self.lineSpacingBox.setValue(font_format.line_spacing)
         self.letterSpacingBox.setValue(font_format.letter_spacing)
         self.verticalChecker.setChecked(font_format.vertical)
-        self.formatBtnGroup.boldBtn.setChecked(font_format.bold)
+        weight = font_format.font_weight if font_format.font_weight is not None else (700 if font_format.bold else 400)
+        self._sync_weight_controls(weight, update_active=False)
         self.formatBtnGroup.underlineBtn.setChecked(font_format.underline)
         self.formatBtnGroup.italicBtn.setChecked(font_format.italic)
         self.alignBtnGroup.setAlignment(font_format.alignment)

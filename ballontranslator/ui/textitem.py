@@ -11,12 +11,36 @@ from qtpy.QtGui import (QGradient, QKeyEvent, QFont, QTextCursor, QPixmap, QPain
 from ballontranslator.utils.textblock import TextBlock, FontFormat, TextAlignment, LineSpacingType
 from ballontranslator.utils.imgproc_utils import xywh2xyxypoly, rotate_polygons
 from ballontranslator.utils.fontformat import FontFormat, px2pt, pt2px
+from ballontranslator.utils import shared
 from .misc import td_pattern, table_pattern
 from .scene_textlayout import VerticalTextDocumentLayout, HorizontalTextDocumentLayout, SceneTextLayout
 from .text_graphical_effect import apply_shadow_effect
 
 TEXTRECT_SHOW_COLOR = QColor(30, 147, 229, 170)
 TEXTRECT_SELECTED_COLOR = QColor(248, 64, 147, 170)
+
+
+def qfont_weight(weight: int):
+    try:
+        return QFont.Weight(int(weight))
+    except (TypeError, ValueError):
+        return int(weight)
+
+
+def qt_font_family(family: str, weight: int = None) -> str:
+    registry = getattr(shared, 'FONT_REGISTRY', None)
+    if registry is None:
+        return family
+    resolved = registry.resolve_family(family, weight)
+    return resolved.qt_family or family
+
+
+def storage_font_family(family: str, weight: int = None) -> str:
+    registry = getattr(shared, 'FONT_REGISTRY', None)
+    if registry is None:
+        return family
+    resolved = registry.resolve_family(family, weight)
+    return resolved.canonical_family or family
 
 
 class TextBlkItem(QGraphicsTextItem):
@@ -614,7 +638,7 @@ class TextBlkItem(QGraphicsTextItem):
         fontformat = self.fontformat.deepcopy()
         fontformat.frgb = [color.red(), color.green(), color.blue()]
         fontformat.font_weight = font.weight()
-        fontformat.font_family = font.family()
+        fontformat.font_family = storage_font_family(font.family(), fontformat.font_weight)
         if self.isEditing():
             fontformat.font_size = pt2px(font.pointSizeF())
         else:
@@ -640,16 +664,18 @@ class TextBlkItem(QGraphicsTextItem):
         format = cursor.charFormat()
         font = self.document().defaultFont()
         
-        font.setFamily(ffmat.font_family)
         font.setPointSizeF(ffmat.size_pt)
         font.setHintingPreference(QFont.HintingPreference.PreferNoHinting)
         font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias | QFont.StyleStrategy.NoSubpixelAntialias)
 
         fweight = ffmat.font_weight
-        if fweight is  None:
-            fweight = font.weight()
+        if fweight is None:
+            fweight = 700 if ffmat.bold else font.weight()
             ffmat.font_weight = fweight
-        font.setBold(ffmat.bold)
+        fweight = int(fweight)
+        ffmat.bold = fweight >= 700
+        font.setFamily(qt_font_family(ffmat.font_family, fweight))
+        font.setWeight(qfont_weight(fweight))
 
         self.document().setDefaultFont(font)
         format.setFont(font)
@@ -658,8 +684,7 @@ class TextBlkItem(QGraphicsTextItem):
             format.setForeground(gradient)
         else:
             format.setForeground(QColor(*ffmat.foreground_color()))
-        if not ffmat.bold:
-            format.setFontWeight(fweight)
+        format.setFontWeight(qfont_weight(fweight))
         format.setFontItalic(ffmat.italic)
         format.setFontUnderline(ffmat.underline)
         if not ffmat.vertical:
@@ -772,11 +797,12 @@ class TextBlkItem(QGraphicsTextItem):
 
     def _doc_set_font_family(self, value: str, cursor: QTextCursor):
         doc = self.document()
+        render_family = qt_font_family(value, doc.defaultFont().weight())
         lastpos = doc.rootFrame().lastPosition()
         if cursor.selectionStart() == 0 and \
             cursor.selectionEnd() == lastpos:
             font = doc.defaultFont()
-            font.setFamily(value)
+            font.setFamily(render_family)
             doc.setDefaultFont(font)
 
         sel_start = cursor.selectionStart()
@@ -795,9 +821,8 @@ class TextBlkItem(QGraphicsTextItem):
                     cfmt = fragment.charFormat()
                     under_line = cfmt.fontUnderline()
                     cfont = cfmt.font()
-                    font = QFont(value, cfont.pointSize(), cfont.weight(), cfont.italic())
+                    font = QFont(render_family, cfont.pointSize(), cfont.weight(), cfont.italic())
                     font.setPointSizeF(cfont.pointSizeF())
-                    font.setBold(font.bold())
                     font.setWordSpacing(cfont.wordSpacing())
                     font.setLetterSpacing(cfont.letterSpacingType(), cfont.letterSpacing())
                     cfmt.setFont(font)
@@ -809,13 +834,13 @@ class TextBlkItem(QGraphicsTextItem):
             block = block.next()
 
         cfmt = cursor.charFormat()
-        cfmt.setFontFamily(value)
+        cfmt.setFontFamily(render_family)
         self.set_cursor_cfmt(cursor, cfmt)
 
     def setFontWeight(self, value: float, repaint_background: bool = True, set_selected: bool = False, restore_cursor: bool = False):
         cursor, after_kwargs = self._before_set_ffmt(set_selected, restore_cursor)
         cfmt = QTextCharFormat()
-        cfmt.setFontWeight(value)
+        cfmt.setFontWeight(qfont_weight(value))
         self.set_cursor_cfmt(cursor, cfmt, True)
         self._after_set_ffmt(cursor, repaint_background, restore_cursor, **after_kwargs)
 
