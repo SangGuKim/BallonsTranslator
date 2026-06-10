@@ -117,6 +117,20 @@ If a saved system font is missing on the current platform, the first
 implementation should preserve the saved family and let Qt fallback handle
 rendering. A later UI can expose missing or resolved font state explicitly.
 
+### Merge System Aliases Only From Optional Data
+
+Qt can expose localized and English system family names as separate entries,
+such as `Batang` and `바탕` on Korean Windows. Qt does not provide a stable alias
+relationship for these names through `QFontDatabase` alone.
+
+System font aliases should therefore not be inferred automatically. If an
+optional alias table is provided, only the groups explicitly listed in that
+table should be merged. If no table is provided, or a family is not listed, the
+families should remain separate Qt-provided entries.
+
+This keeps the default behavior conservative while allowing distributors or
+users to provide locale-specific alias data.
+
 ### Separate Internal Family and Display Name
 
 The value used internally and saved into projects should be a canonical family
@@ -175,6 +189,16 @@ For example, if a font declares separate families such as `Example Sans Bold`,
 `Example Sans Light`, and `Example Sans Medium`, those should remain separate
 unless the font metadata provides a shared typographic family.
 
+An optional custom group table can override this for known font families. This
+is useful when separate files declare weight-specific family names but users
+expect one picker family with separate weights. The override should affect the
+picker grouping only: each face must keep its original canonical family and Qt
+rendering family for persistence and rendering.
+
+If no custom group table is provided, these faces remain separate. The
+implementation should not infer such groups by stripping words like `Bold`,
+`Light`, or `Medium` from filenames.
+
 ## Proposed Runtime Model
 
 Introduce a runtime-only font registry:
@@ -201,6 +225,7 @@ class FontEntry:
     faces: list[FontFace]
     is_scalable: bool
     aliases: set[str]
+    alias_source: Literal["name-table", "optional-table", "none"]
 ```
 
 Field meanings:
@@ -216,6 +241,8 @@ Field meanings:
   mode
 - `is_scalable`: whether the font should appear in the normal font picker
 - `aliases`: older names, localized names, and Qt names accepted by resolver
+- `alias_source`: whether aliases came from custom font name tables, optional
+  system alias data, or no merge data
 
 ## Resolver Policy
 
@@ -231,6 +258,11 @@ Resolve an existing saved `font_family` in this order:
 When a user selects a new font from the picker, save the canonical family. When
 loading an existing project, preserve the stored value unless the user changes
 the font.
+
+If a picker family comes from an optional custom group table, do not save the
+pseudo group family directly unless it is also renderable by Qt. Save the
+selected face's canonical family together with the selected weight, so the
+project still resolves when the optional table is unavailable.
 
 ## Font Picker Policy
 
