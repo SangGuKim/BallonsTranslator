@@ -334,6 +334,33 @@ Small Fonts
 
 ## weight UI 정책
 
+### fontsys 브랜치의 UI prototype 참고
+
+`fontsys` 브랜치에는 weight 선택 UI를 이미 한 번 구현한 흔적이 있다. 최종 구현은
+현재 `dev` 구조와 새 registry 설계에 맞춰 다시 작성해야 하지만, 레이아웃 구조와
+상호작용 방향은 참고할 만하다.
+
+확인한 주요 변경은 다음과 같다.
+
+- `FontWeightComboBox`를 추가해 family별 사용 가능한 weight를 숫자 combobox로
+  표시했다.
+- text panel 첫 줄을 `font family`, `font size`, `font weight` 순서로 배치했다.
+- 기존 첫 줄에 있던 line spacing control은 stroke/letter spacing이 있는 아래 줄로
+  이동했다.
+- `B` 버튼은 별도 `bold` boolean 토글이 아니라 `font_weight` shortcut으로
+  동작했다. 켜면 700 계열, 끄면 400 계열로 보내고, 실제 bold weight가 따로 있으면
+  `QFontDatabase.bold()`/`weight()`로 가능한 값을 찾았다.
+- family가 바뀌면 weight combobox를 다시 채우고 기존 weight에 가장 가까운 항목을
+  선택했다.
+- 여러 text block을 선택했을 때 공통값은 표시하고, 값이 섞인 항목은 비워 두는
+  multi-select UI 갱신도 실험했다.
+
+이 prototype의 위젯 코드를 그대로 가져오지는 않는다. 기존 구현은 숫자 weight와
+`QFontDatabase.styles()`에 직접 의존하므로, 새 구현에서는 registry의 `FontFace`
+목록과 grouped/separate mode를 기준으로 weight 후보를 만들어야 한다. 다만
+`family + size + weight`를 한 줄에 둔 레이아웃과, `B` 버튼을 weight shortcut으로
+취급하는 상호작용은 유지할 가치가 있다.
+
 ### Group weights by family
 
 family combobox에는 family만 표시한다. 별도 weight combobox에는 사용 가능한

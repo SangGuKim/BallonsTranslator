@@ -274,6 +274,30 @@ Font weight selection mode:
 - Show font faces separately
 ```
 
+### Prior UI Prototype Reference
+
+An earlier prototype already added a font-weight control to the text format
+panel. The implementation should be rewritten for the registry model, but the UI
+layout and interaction model are useful references.
+
+Useful parts of that prototype:
+
+- Add a compact font-weight combobox next to font family and font size.
+- Keep the first text-format row ordered as family, size, weight.
+- Move line-spacing controls to the lower row near stroke and letter-spacing
+  controls.
+- Treat the `B` button as a weight shortcut rather than an independent saved
+  boolean. Turning it on should select a bold weight, and turning it off should
+  select a regular weight.
+- Refresh available weights when the family changes, while preserving the
+  nearest selected weight when possible.
+- For multi-selection, show common values and clear controls whose values differ
+  between selected text blocks.
+
+The final implementation should source weight options from registry `FontFace`
+metadata instead of querying Qt styles ad hoc, so grouped and separate-face modes
+remain consistent.
+
 ### Group Weights by Family
 
 The family picker shows one entry per family. A separate weight picker shows
