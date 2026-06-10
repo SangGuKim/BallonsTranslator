@@ -32,8 +32,71 @@
   영문명으로 나오는 등 OS별 family name이 달라질 수 있다.
 - 커스텀 폰트는 폰트 파일 name table에 따라 영문명, 로컬라이즈명, 깨진 이름,
   weight별 family명 등으로 제각각 표시된다.
+- Windows에서는 localized family와 English family가 별도 이름으로 노출되거나,
+  하나의 TTC 파일 안에 여러 관련 family가 함께 들어 있어 목록상 중복처럼 보일 수
+  있다. 예를 들어 `바탕`/`Batang`, `바탕체`/`BatangChe` 같은 localized alias
+  쌍은 Qt backend와 locale에 따라 다르게 보일 수 있다.
+- `폰트명 Bold`, `폰트명 Light`처럼 weight가 family name 뒤에 붙어 있는 face가
+  Qt를 거치면 모두 `폰트명` family로만 표시될 수 있다. 이 경우 리스트에서는
+  weight preview로만 구분해야 하는데, 일부 폰트는 preview 굵기도 동일하게 보여
+  사용자가 face를 구분할 수 없다.
 - non-scalable Windows bitmap font가 목록에 들어오면 Qt6 DirectWrite 경고가
   반복될 수 있다.
+
+## 추가 확인된 Qt 노출 한계
+
+실제 Windows 테스트에서 다음 두 문제가 추가로 확인됐다.
+
+### localized family 중복 노출
+
+`바탕`/`Batang`, `바탕체`/`BatangChe`처럼 localized family와 English family가
+alias 관계에 있거나, 같은 TTC 파일 안의 관련 family가 함께 노출되는 경우가 있다.
+이것이 Qt의 `QFontDatabase.families()` 단계에서 이미 별도 family 문자열로
+들어오면, 단순 문자열 dedup이나 stable sort만으로는 alias 관계인지 실제로 별개
+family인지 알 수 없다.
+
+커스텀 폰트는 파일의 `name` table을 직접 읽어서 English family, localized
+family, typographic family, full name, PostScript name을 비교할 수 있으므로 어느
+정도 보정 가능하다. 반면 시스템 폰트는 Qt가 반환하는 family/style 정보만으로
+실제 물리 폰트 파일이나 동일 font face를 안정적으로 역추적하기 어렵다.
+
+따라서 시스템 폰트에 대해서는 다음 정도를 안전한 목표로 둔다.
+
+- Qt가 `writingSystems()`, `styles()`, `weight()`, `bold()`, `isSmoothlyScalable()`
+  등으로 제공하는 정보는 표시와 경고에만 사용한다.
+- 시스템 폰트 alias는 자동 추정으로 병합하지 않는다.
+- optional alias table이 제공되면 그 테이블에 명시된 group만 병합한다.
+- alias table이 없거나 해당 family가 table에 없으면 별도 entry로 유지한다.
+- 확신이 없으면 별도 entry로 남기고, tooltip/debug 정보에 `Qt family`와 source를
+  표시한다.
+- 추후 platform별 backend가 가능해지면 Windows DirectWrite/registry, macOS
+  CoreText, Linux fontconfig에서 실제 file 또는 face id를 얻어 강한 dedup을 한다.
+
+즉 `바탕`/`Batang`, `바탕체`/`BatangChe` 같은 이름을 항상 하나로 합치는 것을
+1차 PR의 필수 목표로 두지 않는다. 대신 registry 구조가 alias/dedup 정보를 담을 수
+있게 만들고, optional data가 있을 때만 system alias를 병합한다. 확실한 custom
+font부터 정확도를 높이고, system alias table은 배포판이나 사용자 설정이 제공할 수
+있는 보조 데이터로 둔다.
+
+### weight suffix가 family로 접히는 문제
+
+일부 폰트는 `FontName Bold`, `FontName Light`, `FontName Medium`처럼 weight가
+family name에 포함된 형태로 설치되어 있거나, name table이 그렇게 작성되어 있다.
+하지만 Qt는 이를 하나의 family `FontName`과 여러 style/weight로 정규화해서
+반환할 수 있다.
+
+이 동작 자체는 family+weight UI에는 유리할 수 있지만, 다음 경우 문제가 된다.
+
+- 원래 family name 자체가 weight suffix를 포함하는 별도 제품명인 경우
+- Qt의 style/weight 값이 실제 face 구분을 충분히 보존하지 못하는 경우
+- preview rendering에서 weight 차이가 보이지 않아 UI에서 같은 항목처럼 보이는 경우
+- 사용자가 파일 단위 또는 face 단위로 명확히 선택해야 하는 경우
+
+따라서 grouped mode에서도 `FontFace`에는 원본 face 이름을 최대한 보존해야 한다.
+커스텀 폰트는 name table의 `full name`, `subfamily`, `typographic subfamily`,
+`PostScript name`, 파일명을 face identity 후보로 기록한다. 시스템 폰트는 Qt가
+주는 `style_name`과 weight를 우선 쓰되, 확실하지 않으면 separate mode에서
+`display_family + style_name` 또는 `display_family + weight label`을 함께 표시한다.
 
 ## upstream Qt/font 히스토리 확인
 
@@ -215,6 +278,16 @@ Font weight selection mode:
 
 즉 파일명 패턴만 보고 `Bold`, `Light`, `Medium`을 제거해 합치지 않는다.
 
+예외적으로 optional custom group table이 제공되면, 테이블에 명시된 face만 하나의
+picker family로 표시할 수 있다. 이 경우에도 각 face의 원래 canonical family는
+잃지 않는다. 예를 들어 `Korail Round Gothic Bold` face는 grouped picker 안에서
+`Korail Round Gothic` family의 Bold weight로 보일 수 있지만, 렌더링과 저장에
+필요한 face canonical 후보로는 `Korail Round Gothic Bold`를 유지한다.
+
+이 테이블은 폰트 metadata를 자동 추론해서 고치는 장치가 아니라, 사용자가 알고 있는
+폰트 패밀리 관계를 명시적으로 제공하는 optional data이다. 테이블이 없으면 기존처럼
+분리 표시한다.
+
 ### 5. fallback은 명시적으로 기록한다
 
 폰트 name table은 폰트마다 품질이 다르다. 따라서 fallback 정책은 코드와 문서에
@@ -241,6 +314,9 @@ class FontFace:
     style_name: str
     weight: int
     file_path: str | None
+    full_name: str | None
+    postscript_name: str | None
+    original_family: str | None
     aliases: set[str]
 
 
@@ -256,6 +332,7 @@ class FontEntry:
     faces: list[FontFace]
     is_scalable: bool
     aliases: set[str]
+    alias_source: Literal["name-table", "optional-table", "none"]
 ```
 
 역할은 다음과 같다.
@@ -269,7 +346,12 @@ class FontEntry:
 - `styles`: Qt style 목록
 - `faces`: grouped mode에서도 face별 `style_name`과 실제 Qt family를 잃지 않기
   위한 정보
-- `aliases`: old project, localized name, Qt family 등 resolve 후보
+- `full_name`/`postscript_name`/`original_family`: `FontFace`가 Qt 반환값 밖의
+  face identity를 추적하기 위한 보조 정보. Qt가 weight suffix를 접어 버린 경우
+  특히 중요하다.
+- `aliases`: old project, localized name, English name, Qt family 등 resolve 후보
+- `alias_source`: alias가 custom font name table에서 온 것인지, optional alias
+  table에서 온 것인지, 아니면 병합되지 않은 항목인지 표시하는 런타임/debug용 값
 
 ## resolve 정책
 
@@ -302,6 +384,47 @@ resolve에 성공하면 렌더링은 `qt_family`로 수행한다. 저장은 기�
 - custom-only 목록도 stable sort한다.
 - system 목록도 stable sort한다.
 - locale-aware sort는 별도 검토하되, 최소한 `casefold` 기반 정렬을 적용한다.
+
+### family 중복과 alias 표시
+
+동일 폰트로 보이는 localized/English family가 동시에 들어온 경우에는 다음 순서로
+처리한다.
+
+1. custom font에서 name table 기준으로 같은 face임이 확인되면 하나의 entry로
+   병합하고, 나머지 이름은 `aliases`에 넣는다.
+2. system font는 optional alias table에 명시된 group만 병합한다.
+3. alias table이 없거나 table에 없는 family는 병합하지 않는다.
+4. 병합하지 않은 항목은 UI tooltip에 Qt family와 source를 보여주어 사용자가
+   원인을 추적할 수 있게 한다.
+
+`바탕`/`Batang`, `바탕체`/`BatangChe` 같은 케이스는 OS와 Qt backend에 따라
+다르게 보일 수 있으므로, 1차 구현에서는 optional data가 제공될 때만 병합한다.
+한국어 Windows alias table은 검증용 또는 사용자 설정용 데이터로 둘 수 있지만,
+테이블이 없으면 두 family를 별도 항목으로 유지한다.
+
+### face 표시명
+
+separate mode에서는 family만 표시하지 말고 face identity가 드러나도록 표시한다.
+
+예시는 다음과 같다.
+
+```text
+FontName
+FontName — Light
+FontName — Medium
+FontName — Bold
+Batang / 바탕
+```
+
+표시 suffix의 우선순위는 다음과 같다.
+
+1. name table의 typographic subfamily 또는 subfamily
+2. Qt `style_name`
+3. numeric weight를 사람이 읽을 수 있는 label로 변환한 값
+4. 파일 stem 또는 full name에서 얻은 face suffix
+
+단, grouped mode의 family combobox에서는 suffix를 숨기고 weight combobox에서만
+표시한다.
 
 ### system/custom 충돌
 
@@ -401,6 +524,10 @@ face를 grouped mode에서도 안정적으로 고르기 위해 필요하다.
 - `Korail Round Gothic Light`
 - `Korail Round Gothic Medium`
 
+단, optional custom group table이 이 세 face를 같은 picker family로 묶도록
+명시하면 grouped mode에서도 함께 표시할 수 있다. 이때 separate mode와 project
+저장 호환성을 위해 원래 face canonical은 계속 보존한다.
+
 ## 저장 정책
 
 현재 project JSON shape를 바로 바꾸지 않는다.
@@ -409,6 +536,9 @@ face를 grouped mode에서도 안정적으로 고르기 위해 필요하다.
 - 새로 선택한 폰트는 `canonical_family`를 `font_family`에 저장한다.
 - `font_weight`는 기존 `FontFormat.font_weight`를 사용한다.
 - display name은 저장하지 않는다.
+- optional custom group table로 만든 pseudo family는 그대로 저장하지 않는다.
+  선택된 weight가 가리키는 실제 face canonical 또는 기존에 Qt가 렌더링 가능한
+  canonical을 저장한다.
 
 필요하면 나중에 backward-compatible field를 추가한다.
 
@@ -462,6 +592,13 @@ face를 grouped mode에서도 안정적으로 고르기 위해 필요하다.
 - 기존 `font_family` 값 resolve
 - rich text의 `font-family` 처리
 - Windows/macOS/Linux에서 family name 차이 확인
+- Windows에서 `바탕`/`Batang`, `바탕체`/`BatangChe`처럼 localized/English alias
+  또는 TTC 관련 family가 중복처럼 노출되는지 확인하고, 병합 여부와 alias 기록을
+  검증
+- `폰트명 Bold`, `폰트명 Light`처럼 weight suffix가 family에 포함된 폰트가
+  grouped mode와 separate mode에서 각각 구분 가능한지 검증
+- preview weight가 동일하게 보이는 폰트에서도 separate mode의 표시 텍스트나
+  tooltip만으로 face를 구분할 수 있는지 확인
 
 ## 이번 통합 범위에서 제외할 것
 
@@ -491,4 +628,7 @@ PR 가능한 목표는 다음과 같다.
 - Windows legacy raster font로 인한 DirectWrite 경고를 줄인다.
 - custom font 중복 표시를 제거한다.
 - OS별 localized family 차이를 다룰 수 있는 구조를 만든다.
+- Windows에서 localized/English alias나 TTC 관련 family가 중복처럼 노출되는 경우를
+  alias/dedup 후보로 추적할 수 있는 구조를 만든다.
+- Qt가 weight suffix를 family에서 제거하더라도 face identity를 잃지 않는다.
 - weight UI는 선택 가능한 모드로 제공한다.
