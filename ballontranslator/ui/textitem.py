@@ -18,6 +18,7 @@ from .text_graphical_effect import apply_shadow_effect
 
 TEXTRECT_SHOW_COLOR = QColor(30, 147, 229, 170)
 TEXTRECT_SELECTED_COLOR = QColor(248, 64, 147, 170)
+FONT_FAMILY_CSS_PATTERN = re.compile(r"(font-family\s*:\s*')([^']+)(')")
 
 
 def qfont_weight(weight: int):
@@ -35,12 +36,56 @@ def qt_font_family(family: str, weight: int = None) -> str:
     return resolved.qt_family or family
 
 
+def qt_font_resolution(family: str, weight: int = None):
+    registry = getattr(shared, 'FONT_REGISTRY', None)
+    if registry is None:
+        return None
+    return registry.resolve_family(family, weight)
+
+
+def apply_resolved_font_family(font: QFont, family: str, weight: int = None):
+    resolved = qt_font_resolution(family, weight)
+    if resolved is None:
+        font.setFamily(family)
+        return
+
+    font.setFamily(resolved.qt_family or family)
+    style_name = getattr(getattr(resolved, 'face', None), 'style_name', '')
+    if style_name and hasattr(font, 'setStyleName'):
+        font.setStyleName(style_name)
+
+
+def apply_resolved_char_format_family(cfmt: QTextCharFormat, family: str, weight: int = None):
+    resolved = qt_font_resolution(family, weight)
+    if resolved is None:
+        return
+
+    cfmt.setFontFamily(resolved.qt_family or family)
+    style_name = getattr(getattr(resolved, 'face', None), 'style_name', '')
+    if style_name and hasattr(cfmt, 'setFontStyleName'):
+        cfmt.setFontStyleName(style_name)
+
+
+def family_for_weight_change(family: str, weight: int = None) -> str:
+    resolved = qt_font_resolution(family, weight)
+    if resolved is not None and resolved.entry is not None:
+        return resolved.entry.canonical_family
+    return storage_font_family(family, weight)
+
+
 def storage_font_family(family: str, weight: int = None) -> str:
     registry = getattr(shared, 'FONT_REGISTRY', None)
     if registry is None:
         return family
     resolved = registry.resolve_family(family, weight)
     return resolved.canonical_family or family
+
+
+def normalize_rich_text_font_families(html: str) -> str:
+    return FONT_FAMILY_CSS_PATTERN.sub(
+        lambda match: match.group(1) + storage_font_family(match.group(2)) + match.group(3),
+        html,
+    )
 
 
 class TextBlkItem(QGraphicsTextItem):
@@ -629,7 +674,7 @@ class TextBlkItem(QGraphicsTextItem):
             _, td = td_pattern.findall(html)[0]
             html = tables[0] + td + '</body></html>'
 
-        return html.replace('>\n<', '><')
+        return normalize_rich_text_font_families(html.replace('>\n<', '><'))
 
     def get_fontformat(self) -> FontFormat:
         fmt = self.textCursor().charFormat()
@@ -674,7 +719,7 @@ class TextBlkItem(QGraphicsTextItem):
             ffmat.font_weight = fweight
         fweight = int(fweight)
         ffmat.bold = fweight >= 700
-        font.setFamily(qt_font_family(ffmat.font_family, fweight))
+        apply_resolved_font_family(font, ffmat.font_family, fweight)
         font.setWeight(qfont_weight(fweight))
 
         self.document().setDefaultFont(font)
@@ -797,12 +842,11 @@ class TextBlkItem(QGraphicsTextItem):
 
     def _doc_set_font_family(self, value: str, cursor: QTextCursor):
         doc = self.document()
-        render_family = qt_font_family(value, doc.defaultFont().weight())
         lastpos = doc.rootFrame().lastPosition()
         if cursor.selectionStart() == 0 and \
             cursor.selectionEnd() == lastpos:
             font = doc.defaultFont()
-            font.setFamily(render_family)
+            apply_resolved_font_family(font, value, font.weight())
             doc.setDefaultFont(font)
 
         sel_start = cursor.selectionStart()
@@ -821,10 +865,8 @@ class TextBlkItem(QGraphicsTextItem):
                     cfmt = fragment.charFormat()
                     under_line = cfmt.fontUnderline()
                     cfont = cfmt.font()
-                    font = QFont(render_family, cfont.pointSize(), cfont.weight(), cfont.italic())
-                    font.setPointSizeF(cfont.pointSizeF())
-                    font.setWordSpacing(cfont.wordSpacing())
-                    font.setLetterSpacing(cfont.letterSpacingType(), cfont.letterSpacing())
+                    font = QFont(cfont)
+                    apply_resolved_font_family(font, value, cfont.weight())
                     cfmt.setFont(font)
                     cfmt.setFontUnderline(under_line)
                     cursor.setPosition(pos1)
@@ -834,15 +876,65 @@ class TextBlkItem(QGraphicsTextItem):
             block = block.next()
 
         cfmt = cursor.charFormat()
-        cfmt.setFontFamily(render_family)
+        cfont = cfmt.font()
+        apply_resolved_font_family(cfont, value, cfont.weight())
+        cfmt.setFont(cfont)
         self.set_cursor_cfmt(cursor, cfmt)
 
     def setFontWeight(self, value: float, repaint_background: bool = True, set_selected: bool = False, restore_cursor: bool = False):
         cursor, after_kwargs = self._before_set_ffmt(set_selected, restore_cursor)
-        cfmt = QTextCharFormat()
-        cfmt.setFontWeight(qfont_weight(value))
-        self.set_cursor_cfmt(cursor, cfmt, True)
+        self.layout.relayout_on_changed = False
+        self._doc_set_font_weight(value, cursor)
+        self.layout.relayout_on_changed = True
+        self.layout.reLayoutEverything()
         self._after_set_ffmt(cursor, repaint_background, restore_cursor, **after_kwargs)
+
+    def _doc_set_font_weight(self, value: float, cursor: QTextCursor):
+        doc = self.document()
+        qweight = qfont_weight(value)
+        lastpos = doc.rootFrame().lastPosition()
+        if cursor.selectionStart() == 0 and \
+            cursor.selectionEnd() == lastpos:
+            font = doc.defaultFont()
+            family = family_for_weight_change(font.family(), font.weight())
+            apply_resolved_font_family(font, family, value)
+            font.setWeight(qweight)
+            doc.setDefaultFont(font)
+
+        sel_start = cursor.selectionStart()
+        sel_end = cursor.selectionEnd()
+        block = doc.firstBlock()
+        while block.isValid():
+            it = block.begin()
+            while not it.atEnd():
+                fragment = it.fragment()
+
+                frag_start = fragment.position()
+                frag_end = frag_start + fragment.length()
+                pos2 = min(frag_end, sel_end)
+                pos1 = max(frag_start, sel_start)
+                if pos1 < pos2:
+                    cfmt = fragment.charFormat()
+                    under_line = cfmt.fontUnderline()
+                    font = QFont(cfmt.font())
+                    family = family_for_weight_change(font.family(), font.weight())
+                    apply_resolved_font_family(font, family, value)
+                    font.setWeight(qweight)
+                    cfmt.setFont(font)
+                    cfmt.setFontUnderline(under_line)
+                    cursor.setPosition(pos1)
+                    cursor.setPosition(pos2, QTextCursor.MoveMode.KeepAnchor)
+                    cursor.setCharFormat(cfmt)
+                it += 1
+            block = block.next()
+
+        cfmt = cursor.charFormat()
+        cfont = cfmt.font()
+        family = family_for_weight_change(cfont.family(), cfont.weight())
+        apply_resolved_font_family(cfont, family, value)
+        cfont.setWeight(qweight)
+        cfmt.setFont(cfont)
+        self.set_cursor_cfmt(cursor, cfmt)
 
     def setFontItalic(self, value: bool, repaint_background: bool = True, set_selected: bool = False, restore_cursor: bool = False):
         cursor, after_kwargs = self._before_set_ffmt(set_selected, restore_cursor)

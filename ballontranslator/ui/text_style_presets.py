@@ -180,9 +180,14 @@ class TextStyleLabel(Widget):
             weight = 700 if self.fontfmt.bold else 400
         family = self.fontfmt.font_family
         registry = getattr(shared, 'FONT_REGISTRY', None)
+        style_name = ''
         if registry is not None:
-            family = registry.resolve_family(family, weight).qt_family or family
+            resolved = registry.resolve_family(family, weight)
+            family = resolved.qt_family or family
+            style_name = getattr(getattr(resolved, 'face', None), 'style_name', '')
         font.setFamily(family)
+        if style_name and hasattr(font, 'setStyleName'):
+            font.setStyleName(style_name)
         try:
             font.setWeight(QFont.Weight(int(weight)))
         except (TypeError, ValueError):
