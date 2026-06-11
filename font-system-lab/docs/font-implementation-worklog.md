@@ -98,6 +98,43 @@ canonical name과 표시용 localized name이 섞이게 만든다. OS를 옮기�
 검증 결과 `KoPubWorld바탕체`는 `KoPubWorldBatang`으로,
 `KoPubWorld돋움체`는 `KoPubWorldDotum`으로 정규화됐다.
 
+### 5. 초기 global font format의 weight 후보가 실제 face 목록과 다름
+
+2026-06-11 macOS 수동 검증 중, 프로그램을 처음 실행하면 마지막으로 저장했던
+global font format이 오른쪽 폰트 패널에 복원되는 것을 확인했다. 테스트 환경의
+global format은 `KoPubWorld바탕체`와 weight `500`이었다.
+
+이 초기 상태에서 weight combobox를 열면 실제 KoPubWorldBatang custom font가 가진
+`300`, `500`, `700`만 보이는 것이 아니라 `100`부터 `900`까지 100 간격의 모든
+weight가 표시됐다. 그러나 다른 font family를 한 번 선택한 뒤 다시
+`KoPubWorld바탕체`를 선택하면 weight 후보가 `300`, `500`, `700` 세 개로 정상
+축소됐다.
+
+현재 관찰로는 초기 global format 복원 경로가 registry entry 기반의 weight 후보
+재계산을 충분히 거치지 않고, 기본 Qt weight 후보 또는 이전 combobox 기본값을
+그대로 노출하는 것으로 보인다. family 변경 이벤트를 거친 뒤에는 정상 후보가
+나오므로, `load_textstyle` 또는 mainwindow 초기화 단계에서 family/weight picker
+동기화 순서가 누락됐을 가능성이 있다.
+
+### 6. 전체 Run 저장 시 global weight 500이 text block weight 400으로 저장됨
+
+같은 검증에서, 초기 상태 그대로 전체 `Run`을 수행하거나, 사용자가 font family를
+다시 선택해 `KoPubWorld바탕체` weight `500`을 명시적으로 고른 뒤 전체 자동 번역을
+수행해도 저장 결과의 text block weight가 `500`이 아니라 `400`으로 남는 현상이
+확인됐다.
+
+저장된 text block의 font family는 `KoPubWorldBatang`으로 올바르게 canonicalize
+되지만, `font_weight`는 `500`이 아니라 `400`으로 설정된다. 이는 `fontformat`
+패널의 global weight 선택값과 자동 번역/자동 식자 시 새 text block에 적용되는
+format 사이에서 weight 값이 전달되지 않거나, 중간 기본값 `400`으로 덮어써지는
+경로가 있음을 시사한다.
+
+이 문제는 앞의 nearest face 표시 보정과 별개다. 앞의 보정은 이미 저장된
+`KoPubWorldBatang + 400`을 화면에서 가능한 face인 `500 Medium`에 가깝게 해석하는
+복원/표시 보정이다. 반면 이 문제는 사용자가 global format에서 `500`을 선택했는데도
+새로 생성되거나 저장되는 text block의 source data가 처음부터 `400`으로 기록되는
+저장/파이프라인 문제다.
+
 ## 최소 수정성 점검
 
 현재 구현은 upstream/dev 대비 다음 범위에 손을 댄다.
@@ -165,3 +202,5 @@ canonical name과 표시용 localized name이 섞이게 만든다. OS를 옮기�
 - 기존 프로젝트 열기와 저장 후 재열기
 - 부분 선택 family/weight 변경
 - text style preset 적용 후 저장/복원
+- 첫 실행 직후 global font format의 family/weight 후보 동기화
+- 전체 Run 후 자동 생성 text block의 global font weight 저장값

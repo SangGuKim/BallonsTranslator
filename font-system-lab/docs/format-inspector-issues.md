@@ -75,6 +75,25 @@ format panel로 연결하는 inspector 경로가 없다.
 format에 들어간다. 이때 `TextBlock.fontformat`은 대표값일 뿐이며, fragment별
 서식과 항상 같을 수 없다.
 
+### Text style preset 선택이 global format 편집과 즉시 결합됨
+
+global font format 영역에는 여러 text style preset을 등록할 수 있다. preset을
+선택하면 파란 테두리로 활성 상태가 표시되고, 패널 제목도 `Global Font Format -
+<preset name>`처럼 바뀐다. 현재 구현에서는 이 시점에 우측 format panel의 값이
+선택한 preset 값으로 즉시 바뀌며, 이후 컨트롤을 조작하면 해당 preset을 수정하는
+동시에 global format도 같은 값으로 움직이는 것으로 보인다.
+
+이 동작은 원래 구현 의도였을 수 있지만, 사용자가 해석하기에는 상태 의미가
+모호하다. 파란 테두리는 "이 preset이 현재 수정 대상이다"라는 뜻으로도 보이고,
+"이 preset이 현재 선택된 global font format이다"라는 뜻으로도 보인다. 후자의
+의미라면 preset 선택을 해제했을 때 global font format은 선택 전의 진짜 global
+format으로 돌아가야 자연스럽다. 그러나 현재는 preset을 한 번 선택하고 값을 바꾼
+뒤 다시 클릭해 선택을 해제해도, global format이 방금 수정한 preset 값으로 남는다.
+
+결과적으로 preset은 저장된 스타일 후보라기보다 global format을 덮어쓰는 임시
+편집 모드처럼 동작한다. 사용자는 preset을 잠시 선택해 수정했다고 생각했는데, 새
+text block 생성 기본값까지 바뀌었다고 느낄 수 있다.
+
 ## 현재 구조의 핵심 원인
 
 ### active_format이 하나뿐이다
@@ -89,6 +108,17 @@ format에 들어간다. 이때 `TextBlock.fontformat`은 대표값일 뿐이며,
 - rich text cursor 위치의 char format
 - rich text selection aggregate format
 - 활성 text style preset
+
+### global format과 active preset의 관계가 명시적이지 않다
+
+현재 text style preset 활성화는 다음 두 의미를 동시에 가진다.
+
+- preset 값을 format panel에 표시하고 수정한다.
+- 현재 global font format의 표시/적용값도 preset 값으로 바꾼다.
+
+따라서 preset을 선택 해제할 때 복원해야 할 "이전 global format"이 별도 상태로
+보존되지 않는다. 이 구조에서는 `style_preset`이 독립 편집 대상인지, global
+format의 현재 선택값인지, global format을 덮어쓰는 shortcut인지 구분하기 어렵다.
 
 ### 패널 표시값과 적용 대상이 분리되어 있지 않다
 
@@ -122,8 +152,27 @@ mixed 상태 표현이 없다. 공백, placeholder, indeterminate state 같은 U
 - `rich_cursor`: text editing 중 cursor만 있는 상태. 현재 cursor char format을 표시한다.
 - `rich_selection`: text editing 중 일부 텍스트가 선택된 상태. 선택 범위 fragment
   aggregate 값을 표시한다.
-- `style_preset`: text style label이 활성화된 상태. global format과 preset 연결
-  편집을 한다.
+- `style_preset_edit`: text style label이 활성화된 상태. preset 자체를 편집한다.
+- `style_preset_selected`: text style label이 현재 global format으로 선택된 상태.
+  선택 해제 시 이전 global format으로 돌아갈지, 선택값을 global format으로 확정할지
+  정책을 명시해야 한다.
+
+`style_preset_edit`와 `style_preset_selected`를 하나로 합칠 수도 있지만, 그 경우
+선택 해제 시 동작을 명확히 정해야 한다. 사용자가 지적한 기대 동작은 "preset을
+활성화한 동안에는 그 preset 값을 편집하고, 비활성화하면 이전 global format으로
+복귀한다"는 모델이다.
+
+권장 모델은 "진짜 global format은 항상 하나만 있고, text style preset은 선택된
+동안만 임시 override로 동작한다"는 방식이다. preset이 활성화되면 panel은 preset
+값을 표시하고 사용자는 그 preset을 바로 수정할 수 있다. 그러나 preset을 해제하면
+panel과 새 text block 기본값은 활성화 전의 global format으로 돌아간다. 이 모델은
+파란 테두리의 의미를 "현재 global format을 임시로 대체 중인 template이자 수정
+대상"으로 통일한다.
+
+이 방식에서 사용자가 preset 값을 global format으로 확정하고 싶다면 별도 apply
+동작을 명시적으로 제공하는 것이 좋다. 이미 label에 apply 버튼이 있으므로, "preset을
+선택하면 임시 override", "apply를 누르면 global format에 복사", "선택 해제하면
+override 종료"처럼 역할을 나누면 사용자가 예측하기 쉽다.
 
 ### mixed value 표시
 
@@ -147,7 +196,10 @@ mixed 상태에서 사용자가 새 값을 입력하면 다음 대상에만 적�
 - `rich_selection`: 선택된 text fragment 범위
 - `rich_cursor`: 이후 입력될 텍스트의 char format
 - `global`: global format
-- `style_preset`: 활성 preset과 global format
+- `style_preset_edit`: 활성 preset만, 또는 명시적으로 적용 버튼을 누를 때 global
+  format
+- `style_preset_selected`: 현재 선택된 preset을 새 block 생성 기본값으로 사용한다.
+  선택 해제 시 이전 global format으로 되돌릴지 여부를 정책으로 정한다.
 
 이때 `TextBlock.fontformat`은 fragment별 rich text를 완전히 대표할 수 없으므로,
 partial rich text 변경 때마다 무조건 덮어쓰는 것은 피해야 한다.
@@ -209,5 +261,7 @@ grouped/separate picker, weight picker, rich text 저장명 정규화만 다룬�
 - undo/redo 시 `TextBlock.fontformat`과 `QTextDocument` fragment format의 동기화
 - text style preset 활성 상태와 rich text selection 편집이 동시에 발생할 때 우선순위
 - multi-block 편집 시 부분 rich text가 있는 block의 대표값 정책
+- text style preset 선택 해제 시 이전 global format으로 복원할지, 마지막 preset
+  값을 global format으로 확정할지에 대한 UX 정책
 
 이 항목을 확인한 뒤 후보 B 또는 C 중 하나를 선택하는 것이 좋다.
