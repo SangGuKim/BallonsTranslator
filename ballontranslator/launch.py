@@ -21,7 +21,7 @@ import ballontranslator.utils.shared as shared # Earlier import of shared to use
 
 PATH_ROOT = Path(shared.PROGRAM_PATH)
 PATH_FONTS = str(PATH_ROOT / 'fonts')
-PATH_FONT_SYSTEM_LAB_DATA = PATH_ROOT / 'font-system-lab' / 'data'
+PATH_FONT_REGISTRY_CONFIG = PATH_ROOT / 'config' / 'font_registry.json'
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--proj-dir", default='', type=str, help='Open project directory on startup')
@@ -295,8 +295,7 @@ def main():
         font_paths,
         system_families,
         locale=shared.DEFAULT_DISPLAY_LANG,
-        custom_group_table_path=optional_existing_path(PATH_FONT_SYSTEM_LAB_DATA / 'custom-font-groups.ko-kr.example.json'),
-        system_alias_table_path=optional_existing_path(PATH_FONT_SYSTEM_LAB_DATA / 'system-font-aliases.ko-kr.example.json'),
+        font_registry_config_path=optional_existing_path(PATH_FONT_REGISTRY_CONFIG),
     )
     # Compatibility adapters for older plain family-list paths. The
     # registry keeps localized display names separately; these lists stay

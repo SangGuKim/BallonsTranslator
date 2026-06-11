@@ -137,9 +137,9 @@ canonical name과 표시용 localized name이 섞이게 만든다. OS를 옮기�
 
 - `font-system-lab/` 문서와 도구는 PR 본문으로 옮기거나 별도 개발 참고 자료로
   제외할지 결정한다.
-- `launch.py`가 `font-system-lab/data/*.example.json`을 직접 optional table로
-  읽는 구조는 PR용 최종 형태로는 어색하다. 실제 배포할 alias table 위치를 정하거나,
-  1차 PR에서는 table 자동 로딩을 빼고 registry 구조만 남기는 방안을 검토한다.
+- `launch.py`는 `font-system-lab/data/*.example.json`을 직접 읽지 않는다.
+  런타임 설정은 `config/font_registry.json` 하나로 통합했다. 형식 설명과 예제
+  코드는 `doc/font_registry_config.md`에 둔다.
 - system alias table은 `바탕`/`Batang`처럼 확실한 케이스에만 유효하다. 자동 추정
   병합은 여전히 하지 않는 것이 안전하다.
 - global font/template 선택 상태, 선택 중 rendering cache, text style 활성/비활성

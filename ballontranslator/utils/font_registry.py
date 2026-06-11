@@ -524,11 +524,17 @@ def _candidate_from_parsed_face(
     )
 
 
+def _json_groups(raw: Any, section: str) -> List[Dict[str, Any]]:
+    if isinstance(raw, dict) and section in raw:
+        return raw.get(section, [])
+    return raw.get('groups', raw if isinstance(raw, list) else [])
+
+
 def load_custom_group_table(path: Optional[str]) -> Dict[str, Dict[str, Any]]:
     if not path:
         return {}
     raw = json.loads(Path(path).read_text(encoding='utf-8'))
-    groups = raw.get('groups', raw if isinstance(raw, list) else [])
+    groups = _json_groups(raw, 'custom_groups')
     table = {}
     for group in groups:
         canonical = group['canonical']
@@ -551,7 +557,7 @@ def load_system_alias_table(path: Optional[str]) -> Dict[str, Dict[str, Any]]:
     if not path:
         return {}
     raw = json.loads(Path(path).read_text(encoding='utf-8'))
-    groups = raw.get('groups', raw if isinstance(raw, list) else [])
+    groups = _json_groups(raw, 'system_aliases')
     table = {}
     for group in groups:
         canonical = group['canonical']
@@ -745,11 +751,14 @@ def build_font_registry(
     font_paths: Iterable[str],
     system_families: Iterable[str],
     locale: str = 'en-US',
+    font_registry_config_path: Optional[str] = None,
     custom_group_table_path: Optional[str] = None,
     system_alias_table_path: Optional[str] = None,
 ) -> FontRegistry:
-    custom_group_table = load_custom_group_table(custom_group_table_path)
-    system_alias_table = load_system_alias_table(system_alias_table_path)
+    custom_group_table = load_custom_group_table(font_registry_config_path)
+    custom_group_table.update(load_custom_group_table(custom_group_table_path))
+    system_alias_table = load_system_alias_table(font_registry_config_path)
+    system_alias_table.update(load_system_alias_table(system_alias_table_path))
     custom_faces = collect_custom_faces(font_paths, qfont_db, locale)
     custom_entries = build_custom_entries(custom_faces, custom_group_table)
     system_entries = [_system_entry(qfont_db, family) for family in sorted(system_families, key=str.casefold)]

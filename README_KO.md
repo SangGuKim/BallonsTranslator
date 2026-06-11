@@ -3,7 +3,7 @@
 
 # BallonsTranslator Korean Fork
 
-[简体中文](README.md) | 한국어 | [English](README_EN.md)
+[简体中文](README_CN.md) | 한국어 | [English](README_EN.md)
 
 이 저장소는 [dmMaze/BallonsTranslator](https://github.com/dmMaze/BallonsTranslator)를 기반으로 한 개인 fork이다. 원본 BallonsTranslator(BT)를 한국어 식자 작업 환경에서 쓰기 편하게 유지하기 위해 폰트, 실행 환경, 편집 UX 문제를 단계적으로 보완한다.
 

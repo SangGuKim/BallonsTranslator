@@ -9,9 +9,10 @@
 - custom font는 Qt 결과에만 기대지 말고 TTF/OTF/TTC `name` table을 직접 읽는다.
 - system font는 기본적으로 Qt가 반환한 family/style/weight를 그대로 사용한다.
 - system alias는 자동 추정으로 병합하지 않는다.
-- optional system alias table이 제공된 경우에만 명시된 group을 병합한다.
-- optional custom group table이 제공된 경우에만 weight-specific family를 하나의
-  picker family로 표시한다.
+- `config/font_registry.json`의 `system_aliases`가 제공된 경우에만 명시된 group을
+  병합한다.
+- `config/font_registry.json`의 `custom_groups`가 제공된 경우에만 weight-specific
+  family를 하나의 picker family로 표시한다.
 - optional custom group으로 만든 pseudo family는 project JSON에 그대로 저장하지
   않는다. 선택된 실제 face canonical과 weight를 보존한다.
 - 기존 project JSON shape는 1차 구현에서 바꾸지 않는다.
@@ -60,17 +61,19 @@ Qt가 `Batang`과 `바탕`을 모두 반환해도, Qt API만으로 둘의 alias 
 
 ### Optional Tables
 
-현재 검증용 예시:
+현재 런타임 설정 파일:
 
-- `data/system-font-aliases.ko-kr.example.json`
-- `data/custom-font-groups.ko-kr.example.json`
+- `config/font_registry.json`
 
-System alias table:
+과거 검증용 분리 예시는 `font-system-lab/data/`에 남아 있지만 본체 런타임에서는
+참조하지 않는다.
+
+`system_aliases`:
 
 - `Batang`/`바탕`처럼 Qt system family alias를 명시적으로 병합한다.
 - table이 없으면 분리한다.
 
-Custom group table:
+`custom_groups`:
 
 - `Korail Round Gothic Bold/Light/Medium`처럼 metadata상 weight-specific family인
   face들을 표시상 하나의 picker family로 묶을 수 있다.
@@ -87,7 +90,7 @@ Custom group table:
 4. font picker를 plain string list가 아니라 entry model 기반으로 바꾼다.
 5. grouped/separate weight mode를 config/UI 옵션으로 둔다.
 6. Windows legacy raster font blacklist를 적용해 DirectWrite 경고를 줄인다.
-7. optional table 로딩은 없으면 no-op이 되게 한다.
+7. optional config 로딩은 없으면 no-op이 되게 한다.
 
 ## 먼저 볼 파일
 
@@ -113,8 +116,7 @@ Windows 기준:
 
 ```powershell
 conda run -n BallonsTranslator python font-system-lab\tools\probe_font_registry_logic.py --output tmp\font-registry-probe.md --limit 200
-conda run -n BallonsTranslator python font-system-lab\tools\probe_font_registry_logic.py --system-alias-table font-system-lab\data\system-font-aliases.ko-kr.example.json --output tmp\font-registry-probe-alias.md --limit 200
-conda run -n BallonsTranslator python font-system-lab\tools\probe_font_registry_logic.py --custom-group-table font-system-lab\data\custom-font-groups.ko-kr.example.json --output tmp\font-registry-probe-custom-groups.md --limit 200
+conda run -n BallonsTranslator python font-system-lab\tools\probe_font_registry_logic.py --font-registry-config config\font_registry.json --output tmp\font-registry-probe-unified.md --limit 200
 conda run -n BallonsTranslator python font-system-lab\tools\dump_font_info.py --output tmp\font-dump.json
 ```
 
@@ -122,6 +124,7 @@ macOS/Linux에서는 경로 구분자만 `/`로 바꾸면 된다.
 
 ```bash
 conda run -n BallonsTranslator python font-system-lab/tools/probe_font_registry_logic.py --output tmp/font-registry-probe-macos.md --limit 200
+conda run -n BallonsTranslator python font-system-lab/tools/probe_font_registry_logic.py --font-registry-config config/font_registry.json --output tmp/font-registry-probe-unified-macos.md --limit 200
 conda run -n BallonsTranslator python font-system-lab/tools/dump_font_info.py --output tmp/font-dump-macos.json
 ```
 

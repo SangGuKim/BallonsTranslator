@@ -60,12 +60,18 @@ WINDOWS_LEGACY_RASTER_FAMILIES = {
 }
 
 
+def json_groups(raw: Any, section: str) -> list[dict[str, Any]]:
+    if isinstance(raw, dict) and section in raw:
+        return raw.get(section, [])
+    return raw.get("groups", raw if isinstance(raw, list) else [])
+
+
 def load_system_alias_table(path: str | None) -> dict[str, dict[str, Any]]:
     if not path:
         return {}
 
     raw = json.loads(Path(path).read_text(encoding="utf-8"))
-    groups = raw.get("groups", raw if isinstance(raw, list) else [])
+    groups = json_groups(raw, "system_aliases")
     table = {}
     for group in groups:
         canonical = group["canonical"]
@@ -86,7 +92,7 @@ def load_custom_group_table(path: str | None) -> dict[str, dict[str, Any]]:
         return {}
 
     raw = json.loads(Path(path).read_text(encoding="utf-8"))
-    groups = raw.get("groups", raw if isinstance(raw, list) else [])
+    groups = json_groups(raw, "custom_groups")
     table = {}
     for group in groups:
         canonical = group["canonical"]
@@ -613,6 +619,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--qt-api", default="pyqt6", choices=["pyqt6", "pyside6", "pyqt5", "pyside2"])
     parser.add_argument("--fonts-dir", default="fonts")
     parser.add_argument("--locale", default="ko-KR")
+    parser.add_argument("--font-registry-config", help="Optional unified JSON file for system aliases and custom font groups.")
     parser.add_argument("--system-alias-table", help="Optional JSON alias table for merging Qt system font families.")
     parser.add_argument("--custom-group-table", help="Optional JSON table for grouping custom font faces in the picker.")
     parser.add_argument("--format", choices=["markdown", "json"], default="markdown")
@@ -632,8 +639,10 @@ def main() -> int:
     app = QApplication.instance() or QApplication([sys.argv[0]])
     system_families = sorted(QFontDatabase.families(), key=str.casefold)
     faces = collect_custom_faces(Path(args.fonts_dir), QFontDatabase, args.locale)
-    alias_table = load_system_alias_table(args.system_alias_table)
-    custom_group_table = load_custom_group_table(args.custom_group_table)
+    alias_table = load_system_alias_table(args.font_registry_config)
+    alias_table.update(load_system_alias_table(args.system_alias_table))
+    custom_group_table = load_custom_group_table(args.font_registry_config)
+    custom_group_table.update(load_custom_group_table(args.custom_group_table))
     report = build_report(faces, system_families, QFontDatabase, alias_table, custom_group_table)
     report["qt"] = {"api": API, "version": QT_VERSION}
     report["policy"] = {

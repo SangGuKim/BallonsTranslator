@@ -1,9 +1,94 @@
-> [!NOTE]
-> 이 저장소는 [dmMaze/BallonsTranslator](https://github.com/dmMaze/BallonsTranslator)를 기반으로 한 개인 fork이다.
-
 # BallonsTranslator Korean Fork
 
-이 fork는 원본 BallonsTranslator(BT)를 한국어 식자 작업 환경에서 쓰기 편하게 유지하기 위한 개인 작업판이다. 원본 프로젝트의 `dev` 브랜치를 계속 추적하면서, 한국어 환경에서 발견한 폰트, 실행 환경, 편집 UX 문제를 단계적으로 보완한다.
+[한국어 안내](README_KO.md) | [简体中文 upstream README](README_CN.md) | [English upstream README](README_EN.md)
+
+> [!NOTE]
+> 이 저장소는 [dmMaze/BallonsTranslator](https://github.com/dmMaze/BallonsTranslator)를 기반으로 한 개인 fork이다. 원본 중국어 README는 간체자 문서이므로 `README_CN.md`에 보존한다.
+
+## 프로젝트 개요
+
+BallonsTranslator Korean Fork는 원본 BallonsTranslator를 한국어 만화와 웹툰 식자 작업에 맞게 안정화하기 위한 작업판이다. 원본의 자동 번역 파이프라인, 이미지 편집, rich text 편집 기능을 유지하면서 한국어 환경에서 자주 드러나는 폰트, 저장 호환성, 편집 UX 문제를 단계적으로 정리한다.
+
+이 fork의 목표는 별도 제품을 만드는 것이 아니다. upstream `dev` 흐름을 따라가며, 한국어 작업에서 검증한 개선을 작게 나누어 유지하고, upstream에 보낼 수 있는 변경은 별도 PR용 브랜치에서 선별한다.
+
+## 원본 프로젝트
+
+BallonsTranslator는 딥러닝 기반 만화 번역 보조 도구이다. 텍스트 검출, OCR, 글자 제거, 번역, 번역문 배치를 자동화하고, 사용자가 결과를 직접 편집할 수 있는 PyQt/qtpy 데스크톱 앱이다.
+
+- Upstream: <https://github.com/dmMaze/BallonsTranslator>
+- 원본 간체 중국어 README: [README_CN.md](README_CN.md)
+- 원본 영어 README: [README_EN.md](README_EN.md)
+- 한국어 안내 문서: [README_KO.md](README_KO.md)
+
+## 이 fork에서 집중하는 문제
+
+- 한국어 custom font의 표시명과 저장명을 안정화한다.
+- Windows, macOS, Linux에서 같은 프로젝트가 가능한 한 같은 폰트로 복원되게 한다.
+- Qt가 반환하는 localized family name과 canonical family name을 분리한다.
+- weight별 font face를 grouped picker와 separate face picker로 다룰 수 있게 한다.
+- rich text HTML 저장 시 localized font family가 project JSON에 섞이지 않도록 보정한다.
+- upstream 동기화와 PR 제출이 가능하도록 실험 코드, 검증 도구, 본체 변경의 경계를 분명히 한다.
+
+## 현재 주요 변경
+
+### Font registry
+
+런타임 전용 font registry를 추가해 custom/system font를 구분하고, UI 표시명과 프로젝트 저장명을 분리한다. custom font는 TTF/OTF/TTC name table을 직접 읽어 canonical family, localized display family, Qt render family, style, weight를 수집한다.
+
+선택적 alias/group 설정은 [config/font_registry.json](config/font_registry.json)에 둔다. 이 파일은 두 종류의 보정을 한 곳에서 정의한다.
+
+- `system_aliases`: Windows에서 `BatangChe`와 `바탕체`처럼 Qt가 별도 system family로 노출하는 alias를 명시적으로 병합한다.
+- `custom_groups`: `Korail Round Gothic Light/Medium/Bold`처럼 폰트 파일이 독립 family로 선언한 face를 picker 표시상 하나의 family로 묶는다.
+
+설정 형식과 예제 코드는 [doc/font_registry_config.md](doc/font_registry_config.md)에 정리한다.
+
+### Font picker and storage
+
+폰트 picker는 registry entry 기반으로 동작한다. 표시명은 로컬라이즈된 이름을 우선 사용하고, 저장값은 가능한 영어 canonical family를 유지한다. grouped mode에서는 family와 weight를 따로 선택하고, separate mode에서는 face 단위 항목을 표시한다.
+
+기존 project JSON shape는 유지한다. `font_family`와 `font_weight` 구조를 바꾸지 않고, 런타임 resolver가 저장값을 현재 OS와 Qt font database에 맞게 해석한다.
+
+### Rich text normalization
+
+텍스트 블록 저장 시 rich text HTML 안의 `font-family` 값을 registry resolver로 canonical family에 가깝게 정규화한다. 이는 UI 표시명 정책과 별개로, 프로젝트 파일에 localized display name과 canonical name이 섞이는 문제를 줄이기 위한 serialization 보정이다.
+
+## 개발 문서와 검증 도구
+
+폰트 시스템 설계와 검증 기록은 [font-system-lab](font-system-lab/)에 둔다. 이 폴더는 본체 런타임이 의존하는 디렉터리가 아니라, 설계 문서와 probe 도구를 모아 둔 작업 공간이다.
+
+주요 문서는 다음과 같다.
+
+- [font-system-lab/IMPLEMENTATION_HANDOFF.md](font-system-lab/IMPLEMENTATION_HANDOFF.md): 새 세션에서 이어가기 위한 인계 문서이다.
+- [font-system-lab/docs/font-registry-design.md](font-system-lab/docs/font-registry-design.md): 한국어 설계 문서이다.
+- [font-system-lab/docs/font-registry-design-en.md](font-system-lab/docs/font-registry-design-en.md): PR 설명에 활용할 수 있는 영어 설계 초안이다.
+- [font-system-lab/docs/font-implementation-worklog.md](font-system-lab/docs/font-implementation-worklog.md): 구현 중 발견한 문제와 해결 기록이다.
+- [font-system-lab/docs/format-inspector-issues.md](font-system-lab/docs/format-inspector-issues.md): 이번 font registry 범위에서 분리한 format inspector 후속 과제이다.
+
+대표 probe 명령은 다음과 같다.
+
+```bash
+conda run -n bt python font-system-lab/tools/probe_font_registry_logic.py \
+  --fonts-dir "$(pwd)/fonts" \
+  --font-registry-config config/font_registry.json \
+  --output tmp/font-registry-probe-unified-macos.md \
+  --limit 200
+```
+
+## 실행
+
+소스 실행 방식은 upstream과 같다.
+
+```bash
+python3 -m ballontranslator
+```
+
+headless 실행 예시는 다음과 같다.
+
+```bash
+python3 -m ballontranslator --headless --exec_dirs "[DIR_1],[DIR_2]"
+```
+
+설정은 기본적으로 `config/config.json`에서 읽는다. font registry alias/group 보정은 `config/font_registry.json`에서 읽으며, 파일이 없으면 해당 보정만 적용하지 않는다.
 
 ## 브랜치 정책
 
@@ -12,247 +97,18 @@
 - `codex/*`: 기능 실험, 검증, PR 정리용 작업 브랜치이다.
 - upstream에 보낼 PR은 `dev` 기준의 별도 브랜치에서 필요한 변경만 선별해 만든다.
 
-## 현재 주요 변경
+## PR 준비 기준
 
-- custom/system font를 구분해 폰트 표시명과 저장명을 분리하는 font registry 실험을 포함한다.
-- custom font의 로컬라이즈 표시명, canonical 저장명, grouped/separate face 표시 모드를 검증 중이다.
-- rich text 저장 시 localized font family가 project JSON에 섞이지 않도록 정규화하는 방향을 실험 중이다.
-- 내부 검토 문서와 폰트 검증 도구는 `font-system-lab/`에 둔다.
+upstream PR을 준비할 때는 다음 원칙을 따른다.
 
-## 원본 프로젝트
+- 기존 project JSON shape를 바꾸지 않는다.
+- mandatory dependency를 추가하지 않는다.
+- `Show only custom fonts` 설정의 의미를 바꾸지 않는다.
+- 시스템 폰트 alias는 자동 추정으로 병합하지 않는다.
+- custom font group도 filename 추정이 아니라 명시 설정이나 font metadata에 근거한다.
+- long-running OCR, translation, inpainting, model loading은 Qt main thread를 막지 않는다.
+- 실험 문서와 probe 결과는 PR 설명으로 옮기거나, 본체 변경과 분리해 설명한다.
 
-- Upstream: <https://github.com/dmMaze/BallonsTranslator>
-- 원본 README는 아래에 보존한다.
-- 한국어 README: [README_KO.md](README_KO.md)
-- 영문 README: [README_EN.md](README_EN.md)
+## 라이선스와 출처
 
----
-
-> [!IMPORTANT]  
-> **如打算公开分享本工具的机翻结果，且没有有经验的译者进行过完整的翻译或校对，请在显眼位置注明机翻。**
-
-# BallonTranslator
-简体中文 | [한국어](/README_KO.md) | [English](/README_EN.md)
-
-深度学习辅助漫画翻译工具，支持一键机翻和简单的图像/文本编辑  
-
-交流反馈 QQ 群：719881337  
-
-
-<img src="doc/src/ui0.jpg" div align=center>
-
-<p align=center>
-界面预览
-</p>
-
-# Features
-* 一键机翻  
-  - 译文回填参考对原文排版的估计，包括颜色，轮廓，角度，朝向，对齐方式等
-  - 最后效果取决于文本检测，识别，抹字，机翻四个模块的整体表现  
-  - 支持日漫和美漫
-  - 英译中，日译英排版已优化，文本布局以提取到的背景泡为参考，中文基于 pkuseg 进行断句，日译中竖排待改善
-  
-* 图像编辑  
-  支持掩膜编辑和修复画笔
-  
-* 文本编辑  
-  - 支持所见即所得地富文本编辑和一些基础排版格式调整、[字体样式预设](https://github.com/dmMaze/BallonsTranslator/pull/311)
-  - 支持全文/原文/译文查找替换
-  - 支持导入导出 word 文档
-
-* 适用于条漫
-
-# 使用说明
-
-## Windows
-如果用 Windows 而且不想自己手动配置环境，而且能正常访问互联网:  
-从 [MEGA](https://mega.nz/folder/gmhmACoD#dkVlZ2nphOkU5-2ACb5dKw) 或 [Google Drive](https://drive.google.com/drive/folders/1uElIYRLNakJj-YS0Kd3r3HE-wzeEvrWd?usp=sharing) 下载 BallonsTranslator_dev_src_with_gitpython.7z，解压并运行 launch_win.bat 启动程序。如果无法自动下载库和模型，手动下载 data 和 ballontrans_pylibs_win.7z 并解压到程序目录下。 
-运行 scripts/local_gitpull.bat 获取更新。
-注意这些打包版无法在 Windows 7 上运行，win 7 用户需要自行安装 [Python 3.8](https://www.python.org/downloads/release/python-3810/) 运行源码。
-如果在 Windows 上运行源码并使用 PyTorch/深度学习模块时遇到 `msvcp140.dll`、`c10.dll` 或 `[WinError 1114]` 相关错误，请安装或更新 [Microsoft Visual C++ Redistributable x64](https://aka.ms/vc14/vc_redist.x64.exe)（Visual Studio 2015-2022；[官方下载说明](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist)）。
-
-## 运行源码
-
-安装 [Python](https://www.python.org/downloads/release/python-31011) **<= 3.12** (别用微软应用商店版) 和 [Git](https://git-scm.com/downloads)
-
-```bash
-# 克隆仓库
-$ git clone https://github.com/dmMaze/BallonsTranslator.git ; cd BallonsTranslator
-
-# 启动程序（会自动检查并安装启动所需的核心依赖）
-$ python3 -m ballontranslator
-
-# 更新程序
-python3 -m ballontranslator --update
-```
-
-启动程序会检查核心依赖；选择需要额外库的模块时，程序会提示安装缺失的可选依赖（也可在设置中启用自动安装）。如果模型下载失败，需要手动从 [MEGA](https://mega.nz/folder/gmhmACoD#dkVlZ2nphOkU5-2ACb5dKw) 或 [Google Drive](https://drive.google.com/drive/folders/1uElIYRLNakJj-YS0Kd3r3HE-wzeEvrWd?usp=sharing) 下载 data 文件夹(或者报错里提到缺失的文件)，并保存到源码目录下的对应位置。
-
-## 构建 macOS 应用(适用 apple silicon 芯片)
-[参考](doc/macOS_app_CN.md)  
-可能会有各种问题，目前还是推荐跑源码
-
-## 一键翻译
-**建议在命令行终端下运行程序**，首次运行请先配置好源语言/目标语言，打开一个带图片的文件夹，点击 Run 等待翻译完成  
-<img src="doc/src/run.gif">  
-
-一键机翻嵌字格式如大小、颜色等默认是由程序决定的，可以在设置面板->嵌字菜单中改用全局设置。全局字体格式就是未编辑任何文本块时右侧字体面板显示的格式:  
-<img src="doc/src/global_font_format.png"> 
-
-## 画板
-
-## 修复画笔
-<img src="doc/src/imgedit_inpaint.gif">
-<p align = "center">
-修复画笔
-</p>
-
-### 矩形工具
-<img src="doc/src/rect_tool.gif">
-<p align = "center">
-矩形工具
-</p>
-
-按下鼠标左键拖动矩形框抹除框内文字，按下右键拉框清除框内修复结果。  
-抹除结果取决于算法(gif 中的"方法1"和"方法2")对文字区域估算的准确程度，一般拉的框最好稍大于需要抹除的文本块。两种方法都比较玄学，能够应付绝大多数简单文字简单背景，部分复杂背景简单文字/简单背景复杂文字，少数复杂背景复杂文字，可以多拉几次试试。  
-勾选"自动"拉完框立即修复，否则需要按下"修复"或者空格键才进行修复，或 ```Ctrl+D``` 删除矩形选框。 
-
-## 文本编辑
-<img src="doc/src/textedit.gif">
-
-
-<p align = "center">
-文本编辑
-</p>
-
-<img src="doc/src/multisel_autolayout.gif" div align=center>
-<p align=center>
-批量文本格式调整及自动排版
-</p>
-
-<img src="doc/src/ocrselected.gif" div align=center>
-<p align=center>
-OCR并翻译选中文本框
-</p>
-
-## 界面说明及快捷键
-* Ctrl+Z，Ctrl+Y 可以撤销重做大部分操作，注意翻页后撤消重做栈会清空
-* A/D 或 pageUp/Down 翻页，如果当前页面未保存会自动保存
-* T 切换到文本编辑模式下(底部最右"T"图标)，W激活文本块创建模式后在画布右键拉文本框
-* P 切换到画板模式，右下角滑条改原图透明度
-* 标题栏->运行 可以启用/禁用任意自动化模块，全部禁用后Run会根据全局字体样式和嵌字设置重新渲染文本  
-* 设置面板配置各自动化模块参数
-* Ctrl++/- 或滚轮缩放画布
-* Ctrl+A 可选中界面中所有文本块
-* Ctrl+F 查找当前页，Ctrl+G全局查找
-* 0-9调整嵌字/原图透明度
-* 文本编辑下 ```Ctrl+B``` 加粗，```Ctrl+U``` 下划线，```Ctrl+I``` 斜体
-* 字体样式面板-"特效"修改透明度添加阴影
-* ```Alt+Arrow Keys``` 或 ```Alt+WASD``` (正在编辑文本块时 ```pageDown``` 或 ```pageUp```) 在文本块间切换
-
-<img src="doc/src/configpanel.png">  
-
-## 命令行模式 (无GUI)
-``` python
-python -m ballontranslator --headless --exec_dirs "[DIR_1],[DIR_2]..."
-```
-所有设置 (如检测模型, 原语言目标语言等) 会从 config/config.json 导入。  
-如果渲染字体大小不对, 通过 ```--ldpi ``` 指定 Logical DPI 大小, 通常为 96 和 72。
-
-# 自动化模块
-本项目重度依赖 [manga-image-translator](https://github.com/zyddnys/manga-image-translator)，在线服务器和模型训练需要费用，有条件请考虑支持一下
-- Ko-fi: <https://ko-fi.com/voilelabs>
-- Patreon: <https://www.patreon.com/voilelabs>
-- 爱发电: <https://afdian.net/@voilelabs>
-
-Sugoi 翻译器作者: [mingshiba](https://www.patreon.com/mingshiba)
-  
-### 文本检测
- * 暂时仅支持日文(方块字都差不多)和英文检测，训练代码和说明见https://github.com/dmMaze/comic-text-detector
- * 支持使用 [星河云(团子漫画OCR)](https://cloud.stariver.org.cn/)的文本检测，需要填写用户名和密码，每次启动时会自动登录。
-   * 详细说明见 [团子OCR说明](doc/团子OCR说明.md)
- * `YSGDetector` 是由 [lhj5426](https://github.com/lhj5426) 训练的模型，能更好地过滤日漫/CG里的拟声词。需要手动从 [YSGYoloDetector](https://huggingface.co/YSGforMTL/YSGYoloDetector) 下载模型放到 data/models 目录下。
-
-
-### OCR
- * 所有 mit 模型来自 manga-image-translator，支持日英汉识别和颜色提取
- * [manga_ocr](https://github.com/kha-white/manga-ocr) 来自 [kha-white](https://github.com/kha-white)，支持日语识别，注意选用该模型程序不会提取颜色
- * [PaddleOCRVLManga](https://huggingface.co/jzhang533/PaddleOCR-VL-For-Manga) 支持日语识别，选用该模型程序不会提取颜色
- * 支持使用 [星河云(团子漫画OCR)](https://cloud.stariver.org.cn/)的OCR，需要填写用户名和密码，每次启动时会自动登录。
-   * 目前的实现方案是逐个textblock进行OCR，速度较慢，准确度没有明显提升，不推荐使用。如果有需要，请使用团子Detector。
-   * 推荐文本检测设置为团子Detector时，将OCR设为none_ocr，直接读取文本，节省时间和请求次数。
-   * 详细说明见 [团子OCR说明](doc/团子OCR说明.md)
- * OCR设置项: 字体识别。把[字体识别模型（YuzuMarker.FontDetection）](https://github.com/JeffersonQin/YuzuMarker.FontDetection)下载下来放在data\models\YuzuMarker.FontDetection目录下。
-  需要的三个文件分别是```data\models\YuzuMarker.FontDetection\font_dataset``` ，  ```data\models\YuzuMarker.FontDetection\name=4x-epoch=18-step=368676.ckpt```，  ```data\font_demo_cache.bin```  
-  识别到的置信率大于60%的字体名称会保存在json文件的```_detected_font_name```字段中。目前没做可视化外显，使用[脚本](scripts/BTjson_to_LPtxt.pyw)导出LabelPlus txt时可选带上字体字号信息，导入到其他软件（如PS/ID）嵌字用。
-
-### 图像修复
-  * AOT 修复模型来自 manga-image-translator
-  * patchmatch 是非深度学习算法，也是PS修复画笔背后的算法，实现来自 [PyPatchMatch](https://github.com/vacancy/PyPatchMatch)，本程序用的是我的[修改版](https://github.com/dmMaze/PyPatchMatchInpaint)
-  * lama* 是微调过的[lama](https://github.com/advimman/lama)
-  
-
-### 翻译器
-
- * 谷歌翻译器已经关闭中国服务，大陆再用需要设置全局代理，并在设置面板把 url 换成*.com
- * 彩云，需要申请 [token](https://dashboard.caiyunapp.com/)
- * papago  
- * DeepL 和 Sugoi (及它的 CT2 Translation 转换)翻译器，感谢 [Snowad14](https://github.com/Snowad14)，如果要使用Sugoi翻译器(仅日译英)，下载[离线模型](https://drive.google.com/drive/folders/1KnDlfUM9zbnYFTo6iCbnBaBKabXfnVJm)，将 ```sugoi_translator``` 移入 BallonsTranslator/ballontranslator/data/models。 
- * 支持 [Sakura-13B-Galgame](https://github.com/SakuraLLM/Sakura-13B-Galgame)。如果在本地单卡上运行且显存不足，可以在设置面板里勾选 ```low vram mode``` (默认启用)。
- * DeepLX 请参考[Vercel](https://github.com/bropines/Deeplx-vercel) 或 [deeplx](https://github.com/OwO-Network/DeepLX)
- * 支持两个版本的 OpenAI 兼容翻译器，支持兼容 OpenAI API 的官方或第三方LLM提供商，需要在设置面板里配置。
-   * 无后缀版本token消耗更小，但分句稳定性稍差，长文本翻译可能有问题。
-   * exp后缀版本token消耗更大，但稳定性更好，且在Prompt中进行了“越狱”，适合长文本翻译。
- * [m2m100](https://huggingface.co/facebook/m2m100_1.2B): 下载并将 m2m100-1.2B-ctranslate2 移到 data/models 目录下
-
-其它优秀的离线英文翻译模型请参考[这条讨论](https://github.com/dmMaze/BallonsTranslator/discussions/515)  
-如需添加新的翻译器请参考[加别的翻译器](doc/加别的翻译器.md)，本程序添加新翻译器只需要继承基类实现两个接口即可不需要理会代码其他部分，欢迎大佬提 pr
-
-## 杂
-* 电脑带 Nvidia 显卡或 Apple silicon 默认启用 GPU 加速
-* 感谢 [bropines](https://github.com/bropines) 提供俄语翻译
-* 第三方输入法可能会造成右侧编辑框显示 bug，见[#76](https://github.com/dmMaze/BallonsTranslator/issues/76)，暂时不打算修
-* 选中文本迷你菜单支持*聚合词典专业划词翻译*[沙拉查词](https://saladict.crimx.com): [安装说明](doc/saladict_chs.md)
-<details>
-  <summary><i>启用 AMD ROCm 显卡加速方法</i></summary>
-
-### 通用方案 ZLUDA (ROCm)
-
-**优点:**
-文本和文本框识别速度比社区预览版略快，当然比 CPU 更快
-
-**缺点:**
-需要额外安装并进行相关配置才可工作，首次启动以及更换识别模型、显卡驱动升级等都需要长时间预热缓存
-
-**安装步骤:**
-
-1. 更新显卡驱动至最新版 (建议 24.12.1 及以上，根据自身系统环境下载并安装 [AMD HIP SDK Page](https://www.amd.com/en/developer/resources/rocm-hub/hip-sdk.html)  )
-2. 下载 [ZLUDA](https://github.com/lshqqytiger/ZLUDA/releases) 并解压到 zluda 文件夹内，复制 zluda 文件夹到系统盘下: 比如c盘 (C:\zluda)  
-3. 配置系统环境变量，以 windows 10 系统为例:设置 - 系统属性 - 高级系统设置 - 环境变量 - 系统变量 - 找到 path 变量，点击编辑，在最后添加 `C:\zluda` 和 `%HIP_PATH%bin` 两项  
-4. 替换 CUDA 库的动态链接文件: 将 `C:\zluda` 文件夹内的 `cublas.dll` `cusparse.dll` 和 `nvrtc.dll` 复制出一份到桌面，按如下规则重命名复制出来的文件  
-
-**注意事项**
-
-注意 HIP SDK 和 ZLUDA 版本对应关系，建议使用较新的AMD显卡驱动程序。
-
-|Windows 版本 | HIP SDK 版本 | ZLUDA 版本 |
-|---|---|---|
-|Windows 11 | 7.1.1 | 3.9.6 |
-|Windows 10 和 11 | 6.4.2 | 3.9.5 |  
-|Windows 10 和 11 | 6.2.4 | 3.9.5 |  
-|Windows 10 和 11 | 6.1.2 | 3.9.5 |  
-
-
-```
-  原文件名 → 新文件名
-
-  cublas.dll → cublas64_11.dll
-
-  cusparse.dll → cusparse64_11.dll
-
-  nvrtc.dll → nvrtc64_112_0.dll
-```
-  将已经重命名的文件替换掉 `BallonsTranslator\ballontrans_pylibs_win\Lib\site-packages\torch\lib\` 目录中的同名文件
-
-5. 启动程序并设置 OCR 和文本检测 为 Cuda **(图像修复请继续使用 CPU)**
-6. 运行 OCR 并等待 ZLUDA 编译 PTX 文件 **(首次编译大概需要 5-10 分钟，取决于 CPU 性能)**,**下次运行无需编译**
+이 저장소는 원본 BallonsTranslator의 GPL-3.0-or-later 라이선스를 따른다. 원본 프로젝트와 관련 모듈, 모델 출처, 사용법은 언어별 README와 upstream 문서를 참고한다.
