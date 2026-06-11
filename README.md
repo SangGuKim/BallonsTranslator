@@ -1,3 +1,32 @@
+> [!NOTE]
+> 이 저장소는 [dmMaze/BallonsTranslator](https://github.com/dmMaze/BallonsTranslator)를 기반으로 한 개인 fork이다.
+
+# BallonsTranslator Korean Fork
+
+이 fork는 원본 BallonsTranslator(BT)를 한국어 식자 작업 환경에서 쓰기 편하게 유지하기 위한 개인 작업판이다. 원본 프로젝트의 `dev` 브랜치를 계속 추적하면서, 한국어 환경에서 발견한 폰트, 실행 환경, 편집 UX 문제를 단계적으로 보완한다.
+
+## 브랜치 정책
+
+- `dev`: upstream `dmMaze/BallonsTranslator:dev`와 일치시키는 동기화 기준 브랜치이다.
+- `main`: 이 fork의 공개/실사용 기준 브랜치이다.
+- `codex/*`: 기능 실험, 검증, PR 정리용 작업 브랜치이다.
+- upstream에 보낼 PR은 `dev` 기준의 별도 브랜치에서 필요한 변경만 선별해 만든다.
+
+## 현재 주요 변경
+
+- custom/system font를 구분해 폰트 표시명과 저장명을 분리하는 font registry 실험을 포함한다.
+- custom font의 로컬라이즈 표시명, canonical 저장명, grouped/separate face 표시 모드를 검증 중이다.
+- rich text 저장 시 localized font family가 project JSON에 섞이지 않도록 정규화하는 방향을 실험 중이다.
+- 내부 검토 문서와 폰트 검증 도구는 `font-system-lab/`에 둔다.
+
+## 원본 프로젝트
+
+- Upstream: <https://github.com/dmMaze/BallonsTranslator>
+- 원본 README는 아래에 보존한다.
+- 영문 README: [README_EN.md](README_EN.md)
+
+---
+
 > [!IMPORTANT]  
 > **如打算公开分享本工具的机翻结果，且没有有经验的译者进行过完整的翻译或校对，请在显眼位置注明机翻。**
 
