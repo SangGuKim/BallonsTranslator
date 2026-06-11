@@ -278,16 +278,26 @@ class FontFamilyComboBox(QComboBox):
             self.setCurrentText('')
             return
         target_entry = None
+        target_face = None
         target_weight = getattr(C.active_format, 'font_weight', None)
         if shared.FONT_REGISTRY is not None:
-            target_entry = shared.FONT_REGISTRY.resolve_family(family, target_weight).entry
+            resolved = shared.FONT_REGISTRY.resolve_family(family, target_weight)
+            target_entry = resolved.entry
+            target_face = resolved.face
         for index in range(self.count()):
             entry = self.itemData(index)
             if not hasattr(entry, 'canonical_family'):
                 continue
             entry_families = {entry.canonical_family, entry.display_family, entry.qt_family}
-            matches_family = entry is target_entry or family in entry_families
-            matches_weight = target_weight is None or not entry.weights or int(target_weight) in {int(weight) for weight in entry.weights}
+            matches_face = target_face is not None and target_face in entry.faces
+            matches_family = entry is target_entry or matches_face or family in entry_families
+            matches_weight = (
+                entry is target_entry
+                or matches_face
+                or target_weight is None
+                or not entry.weights
+                or int(target_weight) in {int(weight) for weight in entry.weights}
+            )
             if matches_family and matches_weight:
                 self.setCurrentIndex(index)
                 self.lineEdit().setText(self.itemText(index))
@@ -543,7 +553,7 @@ class FontFormatPanel(Widget):
         weights = [int(item) for item in weights if item is not None]
         if not weights:
             return int(weight)
-        return min(weights, key=lambda item: (abs(item - int(weight)), item))
+        return min(weights, key=lambda item: (abs(item - int(weight)), -item))
 
     def _sync_weight_controls(self, weight: int, update_active: bool = True):
         is_bold = weight >= 700

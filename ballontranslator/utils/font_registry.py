@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import json
 from pathlib import Path
 import struct
@@ -130,7 +130,7 @@ class FontEntry:
         weighted = [face for face in self.faces if face.weight is not None]
         if not weighted:
             return self.faces[0]
-        return min(weighted, key=lambda face: (abs(face.weight - weight), face.weight))
+        return min(weighted, key=lambda face: (abs(face.weight - weight), -face.weight))
 
 
 @dataclass
@@ -172,12 +172,20 @@ class FontRegistry:
         self.faces_by_key = {}
         for entry in [*self.system_entries, *self.custom_entries]:
             keys = {entry.canonical_family, entry.display_family, entry.qt_family, *entry.aliases}
+            entry_keys = {normalize_key(key) for key in {entry.canonical_family, entry.display_family, entry.qt_family} if key}
+            face_key_counts = defaultdict(int)
+            face_keys_by_face = []
             for face in entry.faces:
                 face_keys = {face.canonical_family, face.display_family, face.qt_family, *face.aliases}
+                normalized_face_keys = {normalize_key(key) for key in face_keys if key}
+                face_keys_by_face.append((face, normalized_face_keys))
+                for normalized in normalized_face_keys:
+                    face_key_counts[normalized] += 1
                 keys.update(face_keys)
-                for key in face_keys:
-                    if key:
-                        self.faces_by_key[normalize_key(key)] = (entry, face)
+            for face, normalized_face_keys in face_keys_by_face:
+                for normalized in normalized_face_keys:
+                    if normalized not in entry_keys and face_key_counts[normalized] == 1:
+                        self.faces_by_key[normalized] = (entry, face)
             for key in keys:
                 if key:
                     self.entries_by_key[normalize_key(key)] = entry
@@ -539,6 +547,26 @@ def load_custom_group_table(path: Optional[str]) -> Dict[str, Dict[str, Any]]:
     return table
 
 
+def load_system_alias_table(path: Optional[str]) -> Dict[str, Dict[str, Any]]:
+    if not path:
+        return {}
+    raw = json.loads(Path(path).read_text(encoding='utf-8'))
+    groups = raw.get('groups', raw if isinstance(raw, list) else [])
+    table = {}
+    for group in groups:
+        canonical = group['canonical']
+        aliases = [canonical, *group.get('aliases', [])]
+        normalized_group = {
+            'canonical': canonical,
+            'display': group.get('display', canonical),
+            'aliases': aliases,
+            'note': group.get('note', ''),
+        }
+        for alias in aliases:
+            table[normalize_key(alias)] = normalized_group
+    return table
+
+
 def collect_custom_faces(font_paths: Iterable[str], qfont_db: Any, locale: str) -> List[FontFace]:
     faces = []
     for font_path_str in font_paths:
@@ -556,6 +584,22 @@ def collect_custom_faces(font_paths: Iterable[str], qfont_db: Any, locale: str) 
     return faces
 
 
+def _custom_group_member_face(face: FontFace, custom_group_table: Dict[str, Dict[str, Any]]) -> FontFace:
+    group_member = custom_group_table.get(normalize_key(face.canonical_family), {}).get('member', {})
+    weight = group_member.get('weight', face.weight)
+    style_name = group_member.get('style', face.style_name)
+    aliases = set(face.aliases)
+    aliases.update(group_member.get('aliases', []))
+    display_family = group_member.get('display', face.display_family)
+    return replace(
+        face,
+        display_family=display_family,
+        style_name=style_name,
+        weight=int(weight) if weight is not None else None,
+        aliases={alias for alias in aliases if alias},
+    )
+
+
 def build_custom_entries(faces: List[FontFace], custom_group_table: Optional[Dict[str, Dict[str, Any]]] = None) -> List[FontEntry]:
     custom_group_table = custom_group_table or {}
     groups: Dict[str, List[FontFace]] = defaultdict(list)
@@ -571,6 +615,9 @@ def build_custom_entries(faces: List[FontFace], custom_group_table: Optional[Dic
         display_family = custom_group['display'] if custom_group else first.display_family
         canonical_family = custom_group['canonical'] if custom_group else first.canonical_family
         is_pseudo_group = custom_group is not None
+        if is_pseudo_group:
+            group_faces = [_custom_group_member_face(face, custom_group_table) for face in group_faces]
+            first = group_faces[0]
 
         weights = []
         styles = []
@@ -578,13 +625,10 @@ def build_custom_entries(faces: List[FontFace], custom_group_table: Optional[Dic
         file_paths = []
         warnings = []
         for face in group_faces:
-            group_member = custom_group_table.get(normalize_key(face.canonical_family), {}).get('member', {})
-            weight = group_member.get('weight', face.weight)
-            style = group_member.get('style', face.style_name)
-            if weight is not None:
-                weights.append(int(weight))
-            if style:
-                styles.append(style)
+            if face.weight is not None:
+                weights.append(int(face.weight))
+            if face.style_name:
+                styles.append(face.style_name)
             if face.file_path:
                 file_paths.append(face.file_path)
             aliases.update(face.aliases)
@@ -647,15 +691,67 @@ def _system_entry(qfont_db: Any, family: str) -> FontEntry:
     )
 
 
+def merge_system_alias_entries(entries: List[FontEntry], alias_table: Dict[str, Dict[str, Any]]) -> List[FontEntry]:
+    if not alias_table:
+        return entries
+
+    grouped: Dict[str, List[FontEntry]] = defaultdict(list)
+    passthrough = []
+    for entry in entries:
+        alias_group = alias_table.get(normalize_key(entry.canonical_family))
+        if alias_group is None:
+            passthrough.append(entry)
+        else:
+            grouped[alias_group['canonical']].append(entry)
+
+    merged_entries = []
+    for canonical, group_entries in grouped.items():
+        alias_group = alias_table[normalize_key(canonical)]
+        display = alias_group.get('display', canonical)
+        aliases = {canonical, display, *alias_group.get('aliases', [])}
+        primary = next((entry for entry in group_entries if normalize_key(entry.canonical_family) == normalize_key(canonical)), group_entries[0])
+        file_paths = sorted({path for entry in group_entries for path in entry.file_paths})
+        weights = sorted({weight for weight in primary.weights if weight is not None})
+        styles = sorted({style for style in primary.styles if style}, key=str.casefold)
+        faces = list(primary.faces)
+        warnings = sorted({warning for entry in group_entries for warning in entry.warnings})
+        if len(group_entries) > 1:
+            warnings.append('merged_by_optional_alias_table')
+
+        merged_aliases = {alias for entry in group_entries for alias in entry.aliases}
+        merged_aliases.update(alias for alias in aliases if alias)
+        merged_entries.append(
+            FontEntry(
+                canonical_family=canonical,
+                display_family=display,
+                qt_family=primary.qt_family,
+                source='system',
+                file_paths=file_paths,
+                weights=weights,
+                styles=styles,
+                faces=faces,
+                is_scalable=any(entry.is_scalable for entry in group_entries),
+                aliases=merged_aliases,
+                alias_source='optional-table',
+                warnings=warnings,
+            )
+        )
+
+    return sorted([*passthrough, *merged_entries], key=lambda entry: entry.display_family.casefold())
+
+
 def build_font_registry(
     qfont_db: Any,
     font_paths: Iterable[str],
     system_families: Iterable[str],
     locale: str = 'en-US',
     custom_group_table_path: Optional[str] = None,
+    system_alias_table_path: Optional[str] = None,
 ) -> FontRegistry:
     custom_group_table = load_custom_group_table(custom_group_table_path)
+    system_alias_table = load_system_alias_table(system_alias_table_path)
     custom_faces = collect_custom_faces(font_paths, qfont_db, locale)
     custom_entries = build_custom_entries(custom_faces, custom_group_table)
     system_entries = [_system_entry(qfont_db, family) for family in sorted(system_families, key=str.casefold)]
+    system_entries = merge_system_alias_entries(system_entries, system_alias_table)
     return FontRegistry(custom_entries=custom_entries, system_entries=system_entries)

@@ -173,7 +173,7 @@ class FontWeightComboBox(QComboBox):
 
         best_index = min(
             range(self.count()),
-            key=lambda index: (abs((self.itemData(index) or 400) - weight), self.itemData(index) or 400),
+            key=lambda index: (abs((self.itemData(index) or 400) - weight), -(self.itemData(index) or 400)),
         )
         self.blockSignals(True)
         self.setCurrentIndex(best_index)
