@@ -2,7 +2,7 @@
 > **If you're sharing the translated result publicly and no experienced human translator participated in a throughout translating or proofreading, please mark it as machine translation somewhere clear to see.**
 
 # BallonTranslator
-[简体中文](/README.md) | English
+[简体中文](/README.md) | [한국어](/README_KO.md) | English
 
 Yet another computer-aided comic/manga translation tool powered by deep learning.  
 
