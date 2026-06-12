@@ -40,6 +40,18 @@ def wrap_fntformat_input(values: str, blkitems: List[TextBlkItem], is_global: bo
     values = [values] * len(blkitems)
     return blkitems, values
 
+
+def should_update_textblk_format(blkitem: TextBlkItem):
+    return not blkitem.isEditing() or blkitem.cursor_selects_entire_document()
+
+
+def update_textblk_format_param(blkitem: TextBlkItem, param_name: str, value):
+    if should_update_textblk_format(blkitem) and hasattr(blkitem.fontformat, param_name):
+        blkitem.fontformat[param_name] = copy.deepcopy(value)
+        if param_name == 'font_weight':
+            blkitem.fontformat.bold = int(value) >= 700
+
+
 def font_formating(push_undostack: bool = False, is_property = True):
 
     def func_wrapper(formatting_func):
@@ -74,24 +86,28 @@ def font_formating(push_undostack: bool = False, is_property = True):
 def ffmt_change_font_family(param_name: str, values: str, act_ffmt: FontFormat, is_global: bool, blkitems: List[TextBlkItem], **kwargs):
     set_kwargs = global_default_set_kwargs if is_global else local_default_set_kwargs
     for blkitem, value in zip(blkitems, values):
+        update_textblk_format_param(blkitem, param_name, value)
         blkitem.setFontFamily(value, **set_kwargs)
 
 @font_formating()
 def ffmt_change_italic(param_name: str, values: str, act_ffmt: FontFormat, is_global: bool, blkitems: List[TextBlkItem], **kwargs):
     set_kwargs = global_default_set_kwargs if is_global else local_default_set_kwargs
     for blkitem, value in zip(blkitems, values):
+        update_textblk_format_param(blkitem, param_name, value)
         blkitem.setFontItalic(value, **set_kwargs)
 
 @font_formating()
 def ffmt_change_underline(param_name: str, values: str, act_ffmt: FontFormat, is_global: bool, blkitems: List[TextBlkItem], **kwargs):
     set_kwargs = global_default_set_kwargs if is_global else local_default_set_kwargs
     for blkitem, value in zip(blkitems, values):
+        update_textblk_format_param(blkitem, param_name, value)
         blkitem.setFontUnderline(value, **set_kwargs)
 
 @font_formating()
 def ffmt_change_font_weight(param_name: str, values: str, act_ffmt: FontFormat, is_global: bool, blkitems: List[TextBlkItem], **kwargs):
     set_kwargs = global_default_set_kwargs if is_global else local_default_set_kwargs
     for blkitem, value in zip(blkitems, values):
+        update_textblk_format_param(blkitem, param_name, value)
         blkitem.setFontWeight(value, **set_kwargs)
 
 @font_formating()
@@ -101,8 +117,8 @@ def ffmt_change_bold(param_name: str, values: str, act_ffmt: FontFormat, is_glob
     if weights:
         act_ffmt.font_weight = weights[0]
     for blkitem, weight in zip(blkitems, weights):
-        if not blkitem.isEditing() or blkitem.cursor_selects_entire_document():
-            blkitem.fontformat.font_weight = weight
+        update_textblk_format_param(blkitem, 'font_weight', weight)
+        update_textblk_format_param(blkitem, 'bold', weight >= 700)
         blkitem.setFontWeight(weight, **set_kwargs)
 
 @font_formating(push_undostack=True)
@@ -127,12 +143,14 @@ def ffmt_change_vertical(param_name: str, values: bool, act_ffmt: FontFormat, is
 def ffmt_change_frgb(param_name: str, values: tuple, act_ffmt: FontFormat, is_global: bool, blkitems: List[TextBlkItem], **kwargs):
     set_kwargs = global_default_set_kwargs if is_global else local_default_set_kwargs
     for blkitem, value in zip(blkitems, values):
+        update_textblk_format_param(blkitem, param_name, value)
         blkitem.setFontColor(value, **set_kwargs)
 
 @font_formating(push_undostack=True)
 def ffmt_change_srgb(param_name: str, values: tuple, act_ffmt: FontFormat, is_global: bool, blkitems: List[TextBlkItem], **kwargs):
     set_kwargs = global_default_set_kwargs if is_global else local_default_set_kwargs
     for blkitem, value in zip(blkitems, values):
+        update_textblk_format_param(blkitem, param_name, value)
         blkitem.setStrokeColor(value, **set_kwargs)
 
 @font_formating(push_undostack=True)
@@ -147,13 +165,15 @@ def ffmt_change_font_size(param_name: str, values: float, act_ffmt: FontFormat, 
     for blkitem, value in zip(blkitems, values):
         if value < 0:
             continue
-        value = px2pt(value)
-        blkitem.setFontSize(value, clip_size=clip_size, **set_kwargs)
+        update_textblk_format_param(blkitem, param_name, value)
+        blkitem.setFontSize(px2pt(value), clip_size=clip_size, **set_kwargs)
 
 @font_formating(is_property=False)
 def ffmt_change_rel_font_size(param_name: str, values: float, act_ffmt: FontFormat, is_global: bool, blkitems: List[TextBlkItem], clip_size=False, **kwargs):
     set_kwargs = global_default_set_kwargs if is_global else local_default_set_kwargs
     for blkitem, value in zip(blkitems, values):
+        if should_update_textblk_format(blkitem):
+            blkitem.fontformat.font_size *= value
         blkitem.setRelFontSize(value, clip_size=clip_size, **set_kwargs)
 
 @font_formating(push_undostack=True)
