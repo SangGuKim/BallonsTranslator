@@ -49,6 +49,14 @@ AlignmentChecker#AlignRightChecker::indicator:indeterminate {
 """
 
 
+def format_values_equal(left, right):
+    if isinstance(left, (list, tuple)) and isinstance(right, (list, tuple)):
+        if len(left) != len(right):
+            return False
+        return all(format_values_equal(lval, rval) for lval, rval in zip(left, right))
+    return left == right
+
+
 class LineEdit(QLineEdit):
 
     return_pressed_wochange = Signal()
@@ -834,7 +842,7 @@ class FontFormatPanel(Widget):
             for key in aggregate_format.annotations_set():
                 if key.startswith('_') or not hasattr(font_format, key):
                     continue
-                if aggregate_format[key] != font_format[key]:
+                if not format_values_equal(aggregate_format[key], font_format[key]):
                     mixed_fields.add(key)
         if 'font_size' in mixed_fields:
             aggregate_format.font_size = sum(font_format.font_size for font_format in formats) / len(formats)
@@ -896,7 +904,7 @@ class FontFormatPanel(Widget):
         mixed_fields = set()
         for font_format in formats[1:]:
             for key in {'font_family', 'font_size', 'font_weight', 'frgb', 'bold', 'italic', 'underline'}:
-                if aggregate_format[key] != font_format[key]:
+                if not format_values_equal(aggregate_format[key], font_format[key]):
                     mixed_fields.add(key)
         return aggregate_format, mixed_fields
 
