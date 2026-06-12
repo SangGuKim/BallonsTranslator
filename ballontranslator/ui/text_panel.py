@@ -8,6 +8,7 @@ from qtpy.QtGui import QFocusEvent, QMouseEvent, QTextCursor, QKeyEvent, QFont
 
 from ballontranslator.utils import shared
 from ballontranslator.utils import config as C
+from ballontranslator.utils.config import save_text_styles
 from ballontranslator.utils.fontformat import FontFormat, px2pt, LineSpacingType
 from .custom_widget import Widget, ColorPickerLabel, ClickableLabel, CheckableLabel, TextCheckerLabel, AlignmentChecker, QFontChecker, SizeComboBox, SizeControlLabel, FontWeightComboBox
 from .textitem import TextBlkItem
@@ -169,6 +170,9 @@ class FontSizeBox(QFrame):
     def onUpBtnClicked(self):
         raito = 1.25
         size = self.getFontSize()
+        if not size.strip():
+            self.param_changed.emit('rel_font_size', raito)
+            return
         multi_size=False
         if "+" in size:
             size = size.strip("+")
@@ -189,6 +193,9 @@ class FontSizeBox(QFrame):
     def onDownBtnClicked(self):
         raito = 0.75
         size = self.getFontSize()
+        if not size.strip():
+            self.param_changed.emit('rel_font_size', raito)
+            return
         multi_size=False
         if "+" in size:
             size = size.strip("+")
@@ -329,6 +336,7 @@ class FontFamilyComboBox(QComboBox):
 class FontFormatPanel(Widget):
     
     textblk_item: TextBlkItem = None
+    textblk_items: List[TextBlkItem] = None
     text_cursor: QTextCursor = None
     global_format: FontFormat = None
     restoring_textblk: bool = False
@@ -508,10 +516,19 @@ class FontFormatPanel(Widget):
         self.vlayout.setSpacing(0)
 
         self.focusOnColorDialog = False
+        self.textblk_items = []
+        self.mixed_fields = set()
         C.active_format = self.global_format
 
     def global_mode(self):
         return id(C.active_format) == id(self.global_format)
+
+    def preset_mode(self):
+        preset_format = self.active_text_style_format()
+        return preset_format is not None and id(C.active_format) == id(preset_format)
+
+    def multi_block_mode(self):
+        return bool(self.textblk_items)
     
     def active_text_style_label(self):
         return self.textstyle_panel.active_text_style_label
@@ -528,11 +545,36 @@ class FontFormatPanel(Widget):
         func_kwargs = {}
         if param_name in {'font_size', 'rel_font_size'}:
             func_kwargs['clip_size'] = True
-        if self.global_mode():
+        if self.preset_mode():
+            self.update_active_preset_param(param_name, value)
+        elif self.multi_block_mode():
+            func(param_name, value, C.active_format, is_global=False, blkitems=self.textblk_items, set_focus=True, **func_kwargs)
+            if hasattr(C.active_format, param_name):
+                C.active_format[param_name] = value
+            if param_name in self.mixed_fields:
+                self.mixed_fields.remove(param_name)
+                self.update_text_style_arrow_buttons(has_text_selection=True, mixed_selection=bool(self.mixed_fields))
+        elif self.global_mode():
             func(param_name, value, self.global_format, is_global=True, **func_kwargs)
             self.update_text_style_label()
         else:
             func(param_name, value, C.active_format, is_global=False, blkitems=self.textblk_item, set_focus=True, **func_kwargs)
+
+    def update_active_preset_param(self, param_name: str, value):
+        active_text_style_label = self.active_text_style_label()
+        if active_text_style_label is None:
+            return
+        if param_name == 'rel_font_size':
+            active_text_style_label.fontfmt.font_size *= value
+        elif hasattr(active_text_style_label.fontfmt, param_name):
+            active_text_style_label.fontfmt[param_name] = value
+        else:
+            print(f'undefined param name: {param_name}')
+            return
+        if param_name == 'font_weight':
+            active_text_style_label.fontfmt.bold = int(value) >= 700
+        active_text_style_label.updatePreview()
+        save_text_styles()
 
     def on_format_btn_changed(self, param_name: str, value):
         if param_name == 'font_weight':
@@ -649,14 +691,55 @@ class FontFormatPanel(Widget):
         self.familybox.blockSignals(False)
         self.textadvancedfmt_panel.set_active_format(font_format)
 
+    def set_mixed_fields(self, mixed_fields):
+        self.mixed_fields = set(mixed_fields)
+        if 'font_family' in self.mixed_fields:
+            self.familybox.blockSignals(True)
+            self.familybox.setCurrentText('')
+            self.familybox.blockSignals(False)
+        if 'font_size' in self.mixed_fields:
+            self.fontsizebox.fcombobox.blockSignals(True)
+            self.fontsizebox.fcombobox.setCurrentText('')
+            self.fontsizebox.fcombobox.blockSignals(False)
+        if 'font_weight' in self.mixed_fields:
+            self.fontWeightCombo.blockSignals(True)
+            self.fontWeightCombo.setCurrentIndex(-1)
+            self.fontWeightCombo.blockSignals(False)
+
+    def update_text_style_arrow_buttons(self, has_text_selection: bool = False, mixed_selection: bool = False):
+        preset_only = self.active_text_style_label() is not None and not has_text_selection
+        apply_enabled = not preset_only
+        update_enabled = not preset_only and not mixed_selection
+        self.textstyle_panel.setArrowButtonsEnabled(apply_enabled, update_enabled)
+
+    def aggregate_textblk_formats(self, textblk_items: List[TextBlkItem]):
+        aggregate_format = textblk_items[0].get_fontformat()
+        mixed_fields = set()
+        for blkitem in textblk_items[1:]:
+            font_format = blkitem.get_fontformat()
+            for key in aggregate_format.annotations_set():
+                if key.startswith('_') or not hasattr(font_format, key):
+                    continue
+                if aggregate_format[key] != font_format[key]:
+                    mixed_fields.add(key)
+        return aggregate_format, mixed_fields
+
     def set_globalfmt_title(self):
         active_text_style_label = self.active_text_style_label()
         if active_text_style_label is None:
-            self.textstyle_panel.setTitle(self.global_fontfmt_str)
+            self.set_formatpanel_title(self.global_fontfmt_str, highlight=True)
         else:
             title = self.global_fontfmt_str + ' - ' + active_text_style_label.fontfmt._style_name
             valid_title = self.textstyle_panel.elidedText(title)
-            self.textstyle_panel.setTitle(valid_title)
+            self.set_formatpanel_title(valid_title)
+
+    def set_formatpanel_title(self, title: str, highlight: bool = False):
+        self.textstyle_panel.setTitle(title)
+        textlabel = self.textstyle_panel.view_widget.title_label.textlabel
+        if highlight:
+            textlabel.setStyleSheet("color: rgb(30, 147, 229);")
+        else:
+            textlabel.setStyleSheet("")
 
 
     def deactivate_style_label(self):
@@ -665,24 +748,20 @@ class FontFormatPanel(Widget):
 
 
     def on_active_textstyle_label_changed(self):
-        '''
-        merge activate textstyle into global format
-        '''
         active_text_style_label = self.active_text_style_label()
-        if active_text_style_label is not None:
-            updated_keys = self.global_format.merge(active_text_style_label.fontfmt, compare=True)
-            if self.global_mode() and len(updated_keys) > 0:
+        if self.textblk_item is None:
+            if active_text_style_label is not None:
+                self.set_active_format(active_text_style_label.fontfmt)
+            else:
                 self.set_active_format(self.global_format)
             self.set_globalfmt_title()
-        else:
-            if self.global_mode():
-                self.set_globalfmt_title()
+            self.update_text_style_arrow_buttons()
 
     def on_active_stylename_edited(self):
-        if self.global_mode():
+        if self.global_mode() or self.preset_mode():
             self.set_globalfmt_title()
 
-    def set_textblk_item(self, textblk_item: TextBlkItem = None, multi_select:bool=False):
+    def set_textblk_item(self, textblk_item: TextBlkItem = None, multi_select:bool=False, multi_select_items: List[TextBlkItem] = None):
         if textblk_item is None:
             focus_w = self.app.focusWidget()
             focus_p = None if focus_w is None else focus_w.parentWidget()
@@ -698,8 +777,24 @@ class FontFormatPanel(Widget):
                     # Save all format properties including gradient state
                     self.textblk_item.fontformat = copy.deepcopy(C.active_format)
                 self.textblk_item = None
-                self.set_active_format(self.global_format, multi_select)
-                self.set_globalfmt_title()
+                self.textblk_items = []
+                if multi_select:
+                    self.textblk_items = list(multi_select_items or [])
+                    aggregate_format, mixed_fields = self.aggregate_textblk_formats(self.textblk_items)
+                    self.set_active_format(aggregate_format)
+                    self.set_mixed_fields(mixed_fields)
+                    self.set_formatpanel_title(self.multi_textblocks_title(multi_select_items))
+                    self.update_text_style_arrow_buttons(has_text_selection=True, mixed_selection=bool(mixed_fields))
+                elif self.active_text_style_label() is not None:
+                    self.set_active_format(self.active_text_style_format())
+                    self.set_mixed_fields(set())
+                    self.set_globalfmt_title()
+                    self.update_text_style_arrow_buttons()
+                else:
+                    self.set_active_format(self.global_format, multi_select)
+                    self.set_mixed_fields(set())
+                    self.set_globalfmt_title()
+                    self.update_text_style_arrow_buttons()
             
         else:
             if not self.restoring_textblk:
@@ -712,6 +807,15 @@ class FontFormatPanel(Widget):
                     blk_fmt.gradient_angle = textblk_item.fontformat.gradient_angle
                     blk_fmt.gradient_size = textblk_item.fontformat.gradient_size
                 self.textblk_item = textblk_item
+                self.textblk_items = []
                 multi_size = not textblk_item.isEditing() and textblk_item.isMultiFontSize()
                 self.set_active_format(blk_fmt, multi_size)
-                self.textstyle_panel.setTitle(f'TextBlock #{textblk_item.idx}')
+                self.set_mixed_fields(set())
+                self.set_formatpanel_title(f'TextBlock #{textblk_item.idx}')
+                self.update_text_style_arrow_buttons(has_text_selection=True)
+
+    def multi_textblocks_title(self, textblk_items: List[TextBlkItem] = None):
+        if not textblk_items:
+            return 'Text Blocks'
+        title = 'Text Blocks ' + ', '.join(f'#{item.idx}' for item in textblk_items)
+        return self.textstyle_panel.elidedText(title)
