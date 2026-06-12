@@ -85,13 +85,14 @@ class ColorPickerLabel(QLabel):
             painter = QPainter(pixmap)
             fill_attr = DARKFILL_ACTIVE if pcfg.darkmode else LIGHTFILL_ACTIVE
             mixed_color = _icon_fill_color(fill_attr)
-            for row in range(8):
-                for col in range(8):
+            cells = 6
+            for row in range(cells):
+                for col in range(cells):
                     if (row + col) % 2 == 0:
-                        x0 = round(col * width / 8)
-                        y0 = round(row * height / 8)
-                        x1 = round((col + 1) * width / 8)
-                        y1 = round((row + 1) * height / 8)
+                        x0 = round(col * width / cells)
+                        y0 = round(row * height / cells)
+                        x1 = round((col + 1) * width / cells)
+                        y1 = round((row + 1) * height / cells)
                         painter.fillRect(
                             x0,
                             y0,

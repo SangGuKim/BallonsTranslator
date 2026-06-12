@@ -724,9 +724,13 @@ class TextBlkItem(QGraphicsTextItem):
         cursor = self.textCursor()
         if not cursor.hasSelection():
             return False
-        doc_cursor = QTextCursor(self.document())
+        doc = self.document()
+        doc_cursor = QTextCursor(doc)
         doc_cursor.select(QTextCursor.SelectionType.Document)
-        return cursor.selectionStart() <= doc_cursor.selectionStart() and cursor.selectionEnd() >= doc_cursor.selectionEnd()
+        last_block = doc.lastBlock()
+        content_end = last_block.position() + last_block.length() - 1 if last_block.isValid() else doc_cursor.selectionEnd()
+        doc_end = min(doc_cursor.selectionEnd(), content_end)
+        return cursor.selectionStart() <= doc_cursor.selectionStart() and cursor.selectionEnd() >= doc_end
 
     def set_fontformat(self, ffmat: FontFormat, set_char_format=False, set_stroke_width=True, set_effect=True):
         self.repainting = True
