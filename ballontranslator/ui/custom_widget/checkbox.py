@@ -1,6 +1,7 @@
 import sys
 
 from qtpy.QtWidgets import QCheckBox
+from qtpy.QtCore import Qt
 from qtpy.QtGui import QMouseEvent
 
 class QFontChecker(QCheckBox):
@@ -16,6 +17,6 @@ class AlignmentChecker(QCheckBox):
             self.setStyleSheet("min-width: 15px")
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
-        if self.isChecked():
+        if self.checkState() == Qt.CheckState.Checked:
             return event.accept()
         return super().mousePressEvent(event)
