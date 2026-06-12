@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import json
 from pathlib import Path
 import struct
@@ -130,7 +130,7 @@ class FontEntry:
         weighted = [face for face in self.faces if face.weight is not None]
         if not weighted:
             return self.faces[0]
-        return min(weighted, key=lambda face: (abs(face.weight - weight), face.weight))
+        return min(weighted, key=lambda face: (abs(face.weight - weight), -face.weight))
 
 
 @dataclass
@@ -172,12 +172,20 @@ class FontRegistry:
         self.faces_by_key = {}
         for entry in [*self.system_entries, *self.custom_entries]:
             keys = {entry.canonical_family, entry.display_family, entry.qt_family, *entry.aliases}
+            entry_keys = {normalize_key(key) for key in {entry.canonical_family, entry.display_family, entry.qt_family} if key}
+            face_key_counts = defaultdict(int)
+            face_keys_by_face = []
             for face in entry.faces:
                 face_keys = {face.canonical_family, face.display_family, face.qt_family, *face.aliases}
+                normalized_face_keys = {normalize_key(key) for key in face_keys if key}
+                face_keys_by_face.append((face, normalized_face_keys))
+                for normalized in normalized_face_keys:
+                    face_key_counts[normalized] += 1
                 keys.update(face_keys)
-                for key in face_keys:
-                    if key:
-                        self.faces_by_key[normalize_key(key)] = (entry, face)
+            for face, normalized_face_keys in face_keys_by_face:
+                for normalized in normalized_face_keys:
+                    if normalized not in entry_keys and face_key_counts[normalized] == 1:
+                        self.faces_by_key[normalized] = (entry, face)
             for key in keys:
                 if key:
                     self.entries_by_key[normalize_key(key)] = entry
@@ -318,18 +326,35 @@ def _table_offset(data: bytes, sfnt_offset: int, table_tag: bytes) -> Optional[t
     return None
 
 
+def _parse_os2_weight(data: bytes, sfnt_offset: int) -> Optional[int]:
+    table = _table_offset(data, sfnt_offset, b'OS/2')
+    if table is None:
+        return None
+    offset, length = table
+    if length < 6 or offset + 6 > len(data):
+        return None
+    weight = _read_u16(data, offset + 4)
+    # Some legacy fonts store 1-9 instead of 100-900.
+    if 1 <= weight <= 9:
+        weight *= 100
+    if 1 <= weight <= 1000:
+        return weight
+    return None
+
+
 def parse_font_names(path: Path) -> List[Dict[str, Any]]:
     data = path.read_bytes()
     faces = []
     for face_index, sfnt_offset in enumerate(_sfnt_offsets(data)):
+        os2_weight = _parse_os2_weight(data, sfnt_offset)
         table = _table_offset(data, sfnt_offset, b'name')
         if table is None:
-            faces.append({'face_index': face_index, 'error': 'name table not found', 'names': []})
+            faces.append({'face_index': face_index, 'error': 'name table not found', 'names': [], 'os2_weight': os2_weight})
             continue
 
         name_offset, name_length = table
         if name_offset + min(name_length, 6) > len(data):
-            faces.append({'face_index': face_index, 'error': 'invalid name table', 'names': []})
+            faces.append({'face_index': face_index, 'error': 'invalid name table', 'names': [], 'os2_weight': os2_weight})
             continue
 
         count = _read_u16(data, name_offset + 2)
@@ -371,7 +396,7 @@ def parse_font_names(path: Path) -> List[Dict[str, Any]]:
                     'language': WINDOWS_LANGS.get(language_id, f'0x{language_id:04x}'),
                 }
             )
-        faces.append({'face_index': face_index, 'names': names})
+        faces.append({'face_index': face_index, 'names': names, 'os2_weight': os2_weight})
     return faces
 
 
@@ -419,14 +444,20 @@ def simplify_style(value: Optional[str]) -> str:
 
 
 def infer_weight(style: str, qt_weights: Iterable[int]) -> Optional[int]:
+    """Guess a weight from a style name; OS/2 usWeightClass should take priority over this.
+
+    >>> infer_weight('8 ExtraBold', [])
+    800
+    """
     normalized_style = normalize_key(style)
     if normalized_style in EXACT_WEIGHT_BY_STYLE:
         return EXACT_WEIGHT_BY_STYLE[normalized_style]
     if normalized_style in WEIGHT_BY_STYLE:
         return WEIGHT_BY_STYLE[normalized_style]
-    for token, weight in WEIGHT_BY_STYLE.items():
+    # Longest token first so 'extrabold' wins over its substring 'bold'.
+    for token in sorted(WEIGHT_BY_STYLE, key=len, reverse=True):
         if token in normalized_style:
-            return weight
+            return WEIGHT_BY_STYLE[token]
     qt_weights = [weight for weight in qt_weights if weight is not None]
     if qt_weights:
         return sorted(qt_weights, key=lambda value: (abs(value - 400), value))[0]
@@ -443,6 +474,21 @@ def qt_family_weights(qfont_db: Any, family: str) -> List[int]:
     return sorted(set(weights))
 
 
+def _looks_corrupt_qt_family(family: str) -> bool:
+    return bool(family) and all(char in {'?', ' '} for char in family)
+
+
+def _choose_qt_family(canonical_family: Optional[str], qt_families: List[str]) -> Optional[str]:
+    if canonical_family:
+        for family in qt_families:
+            if normalize_key(family) == normalize_key(canonical_family):
+                return family
+    for family in qt_families:
+        if not _looks_corrupt_qt_family(family):
+            return family
+    return canonical_family
+
+
 def _candidate_from_parsed_face(
     font_path: Path,
     parsed_face: Dict[str, Any],
@@ -456,6 +502,7 @@ def _candidate_from_parsed_face(
             canonical_family=family,
             display_family=family,
             qt_family=family,
+            weight=parsed_face.get('os2_weight'),
             file_path=str(font_path),
             face_index=int(parsed_face.get('face_index', 0)),
             warnings=[f"parse_error: {parsed_face['error']}"],
@@ -471,7 +518,7 @@ def _candidate_from_parsed_face(
     english_family = choose_english(typo_family) or choose_english(family)
     localized_family = choose_localized(typo_family, locale) or choose_localized(family, locale)
     canonical_family = english_family or choose_first(typo_family) or choose_first(family)
-    qt_family = qt_families[0] if qt_families else canonical_family
+    qt_family = _choose_qt_family(canonical_family, qt_families)
     if not canonical_family:
         canonical_family = qt_family
     if not canonical_family or not qt_family:
@@ -485,12 +532,14 @@ def _candidate_from_parsed_face(
     )
     display_family = localized_family or english_family or canonical_family
     display_face = choose_localized(full_name, locale)
-    qt_weights = []
-    for family_name in qt_families:
-        qt_weights.extend(qt_family_weights(qfont_db, family_name))
-    weight = infer_weight(style_name, qt_weights)
+    weight = parsed_face.get('os2_weight')
+    if weight is None:
+        qt_weights = []
+        for family_name in [qt_family, *qt_families]:
+            qt_weights.extend(qt_family_weights(qfont_db, family_name))
+        weight = infer_weight(style_name, qt_weights)
 
-    aliases = {canonical_family, display_family, qt_family, *qt_families}
+    aliases = {canonical_family, display_family, qt_family, *[family for family in qt_families if not _looks_corrupt_qt_family(family)]}
     for records in (typo_family, family, full_name, postscript_name):
         aliases.update(record['value'] for record in records if record.get('value'))
 
@@ -544,7 +593,11 @@ def collect_custom_faces(font_paths: Iterable[str], qfont_db: Any, locale: str) 
     for font_path_str in font_paths:
         font_path = Path(font_path_str).resolve()
         font_id = qfont_db.addApplicationFont(str(font_path))
-        qt_families = list(qfont_db.applicationFontFamilies(font_id)) if font_id >= 0 else []
+        qt_families = [
+            family.strip()
+            for family in (qfont_db.applicationFontFamilies(font_id) if font_id >= 0 else [])
+            if family and family.strip()
+        ]
         try:
             parsed_faces = parse_font_names(font_path)
         except Exception as exc:
@@ -554,6 +607,37 @@ def collect_custom_faces(font_paths: Iterable[str], qfont_db: Any, locale: str) 
             if candidate is not None:
                 faces.append(candidate)
     return faces
+
+
+def _disambiguate_duplicate_weights(faces: List[FontFace]) -> List[FontFace]:
+    """Split faces that declare the same OS/2 weight using their style names.
+
+    Vendors sometimes pin several light faces to 250 to dodge an old GDI
+    rendering bug, which would make all but one of them unreachable by weight.
+
+    >>> thin = FontFace('P', 'P', 'P', '1 Thin', 250)
+    >>> extralight = FontFace('P', 'P', 'P', '2 ExtraLight', 250)
+    >>> [face.weight for face in _disambiguate_duplicate_weights([thin, extralight])]
+    [100, 200]
+    """
+    by_weight: Dict[Optional[int], List[FontFace]] = defaultdict(list)
+    for face in faces:
+        by_weight[face.weight].append(face)
+
+    result = []
+    for weight, group in by_weight.items():
+        if weight is None or len(group) == 1:
+            result.extend(group)
+            continue
+        inferred = [infer_weight(face.style_name, []) for face in group]
+        if all(value is not None for value in inferred) and len(set(inferred)) == len(group):
+            result.extend(
+                replace(face, weight=value, warnings=[*face.warnings, 'weight_disambiguated_by_style'])
+                for face, value in zip(group, inferred)
+            )
+        else:
+            result.extend(group)
+    return result
 
 
 def build_custom_entries(faces: List[FontFace], custom_group_table: Optional[Dict[str, Dict[str, Any]]] = None) -> List[FontEntry]:
@@ -571,6 +655,9 @@ def build_custom_entries(faces: List[FontFace], custom_group_table: Optional[Dic
         display_family = custom_group['display'] if custom_group else first.display_family
         canonical_family = custom_group['canonical'] if custom_group else first.canonical_family
         is_pseudo_group = custom_group is not None
+        if not is_pseudo_group:
+            group_faces = _disambiguate_duplicate_weights(group_faces)
+            first = group_faces[0]
 
         weights = []
         styles = []
