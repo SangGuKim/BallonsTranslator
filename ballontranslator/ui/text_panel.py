@@ -139,13 +139,32 @@ class FormatGroupBtn(QFrame):
         hlayout.addWidget(self.underlineBtn)
         hlayout.setSpacing(0)
 
+    def setMixed(self, btn: QFontChecker):
+        btn.blockSignals(True)
+        btn.setTristate(True)
+        btn.setCheckState(Qt.CheckState.PartiallyChecked)
+        btn.setProperty('mixed', True)
+        btn.setStyleSheet("QCheckBox { background-color: rgba(160, 160, 160, 90); border: 2px dashed rgb(90, 90, 90); }")
+        btn.blockSignals(False)
+
+    def clearMixed(self):
+        for btn in (self.boldBtn, self.italicBtn, self.underlineBtn):
+            btn.blockSignals(True)
+            btn.setProperty('mixed', False)
+            btn.setStyleSheet("")
+            btn.setTristate(False)
+            btn.blockSignals(False)
+
     def setBold(self):
+        self.clearMixed()
         self.param_changed.emit('font_weight', 700 if self.boldBtn.isChecked() else 400)
 
     def setItalic(self):
+        self.clearMixed()
         self.param_changed.emit('italic', self.italicBtn.isChecked())
 
     def setUnderline(self):
+        self.clearMixed()
         self.param_changed.emit('underline', self.underlineBtn.isChecked())
     
 
@@ -710,9 +729,8 @@ class FontFormatPanel(Widget):
         self.verticalChecker.setChecked(font_format.vertical)
         weight = font_format.font_weight if font_format.font_weight is not None else (700 if font_format.bold else 400)
         self._sync_weight_controls(weight, update_active=False)
-        self.formatBtnGroup.boldBtn.setTristate(False)
-        self.formatBtnGroup.underlineBtn.setTristate(False)
-        self.formatBtnGroup.italicBtn.setTristate(False)
+        self.formatBtnGroup.clearMixed()
+        self.formatBtnGroup.boldBtn.setChecked(weight >= 700)
         self.formatBtnGroup.underlineBtn.setChecked(font_format.underline)
         self.formatBtnGroup.italicBtn.setChecked(font_format.italic)
         self.alignBtnGroup.setAlignment(font_format.alignment)
@@ -733,7 +751,7 @@ class FontFormatPanel(Widget):
             self.familybox.setCurrentText('')
             self.familybox.blockSignals(False)
         if 'font_size' in self.mixed_fields:
-            if not self.fontsizebox.getFontSize().endswith('*'):
+            if not self.fontsizebox.getFontSize().endswith('+'):
                 self.fontsizebox.fcombobox.blockSignals(True)
                 self.fontsizebox.fcombobox.setCurrentText('')
                 self.fontsizebox.fcombobox.blockSignals(False)
@@ -746,29 +764,17 @@ class FontFormatPanel(Widget):
             self.fontWeightCombo.blockSignals(True)
             self.fontWeightCombo.setCurrentIndex(-1)
             self.fontWeightCombo.blockSignals(False)
-            self.formatBtnGroup.boldBtn.blockSignals(True)
-            self.formatBtnGroup.boldBtn.setTristate(True)
-            self.formatBtnGroup.boldBtn.setCheckState(Qt.CheckState.PartiallyChecked)
-            self.formatBtnGroup.boldBtn.blockSignals(False)
+            self.formatBtnGroup.setMixed(self.formatBtnGroup.boldBtn)
         if 'bold' in self.mixed_fields:
-            self.formatBtnGroup.boldBtn.blockSignals(True)
-            self.formatBtnGroup.boldBtn.setTristate(True)
-            self.formatBtnGroup.boldBtn.setCheckState(Qt.CheckState.PartiallyChecked)
-            self.formatBtnGroup.boldBtn.blockSignals(False)
+            self.formatBtnGroup.setMixed(self.formatBtnGroup.boldBtn)
         if 'italic' in self.mixed_fields:
-            self.formatBtnGroup.italicBtn.blockSignals(True)
-            self.formatBtnGroup.italicBtn.setTristate(True)
-            self.formatBtnGroup.italicBtn.setCheckState(Qt.CheckState.PartiallyChecked)
-            self.formatBtnGroup.italicBtn.blockSignals(False)
+            self.formatBtnGroup.setMixed(self.formatBtnGroup.italicBtn)
         if 'underline' in self.mixed_fields:
-            self.formatBtnGroup.underlineBtn.blockSignals(True)
-            self.formatBtnGroup.underlineBtn.setTristate(True)
-            self.formatBtnGroup.underlineBtn.setCheckState(Qt.CheckState.PartiallyChecked)
-            self.formatBtnGroup.underlineBtn.blockSignals(False)
+            self.formatBtnGroup.setMixed(self.formatBtnGroup.underlineBtn)
         if 'frgb' in self.mixed_fields:
-            self.colorPicker.setStyleSheet("background-color: rgba(160, 160, 160, 80); border: 1px dashed rgb(120, 120, 120);")
+            self.colorPicker.setMixed(True)
         if 'srgb' in self.mixed_fields:
-            self.strokeColorPicker.setStyleSheet("background-color: rgba(160, 160, 160, 80); border: 1px dashed rgb(120, 120, 120);")
+            self.strokeColorPicker.setMixed(True)
         if 'vertical' in self.mixed_fields:
             self.verticalChecker.blockSignals(True)
             self.verticalChecker.setTristate(True)
@@ -801,7 +807,7 @@ class FontFormatPanel(Widget):
         if not self.multi_block_mode():
             return
         aggregate_format, mixed_fields = self.aggregate_textblk_formats(self.textblk_items)
-        size_marker = '*' if 'font_size' in mixed_fields else ''
+        size_marker = '+' if 'font_size' in mixed_fields else ''
         self.set_active_format(aggregate_format, size_marker=size_marker)
         self.set_mixed_fields(mixed_fields)
         self.update_text_style_arrow_buttons(has_text_selection=True, mixed_selection=bool(mixed_fields))
@@ -925,7 +931,7 @@ class FontFormatPanel(Widget):
                 if multi_select:
                     self.textblk_items = list(multi_select_items or [])
                     aggregate_format, mixed_fields = self.aggregate_textblk_formats(self.textblk_items)
-                    size_marker = '*' if 'font_size' in mixed_fields else ''
+                    size_marker = '+' if 'font_size' in mixed_fields else ''
                     self.set_active_format(aggregate_format, size_marker=size_marker)
                     self.set_mixed_fields(mixed_fields)
                     self.set_formatpanel_title(self.multi_textblocks_title(multi_select_items))
@@ -953,7 +959,7 @@ class FontFormatPanel(Widget):
                     blk_fmt.gradient_size = textblk_item.fontformat.gradient_size
                 self.textblk_item = textblk_item
                 self.textblk_items = []
-                size_marker = '+' if not textblk_item.isEditing() and textblk_item.isMultiFontSize() else ''
+                size_marker = '*' if not textblk_item.isEditing() and textblk_item.isMultiFontSize() else ''
                 self.set_active_format(blk_fmt, size_marker=size_marker)
                 self.set_mixed_fields(set())
                 self.set_formatpanel_title(f'TextBlock #{textblk_item.idx}')

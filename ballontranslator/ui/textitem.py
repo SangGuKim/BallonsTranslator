@@ -709,6 +709,40 @@ class TextBlkItem(QGraphicsTextItem):
         fontformat.gradient_size = self.fontformat.gradient_size
         return fontformat
 
+    def _fontformat_from_char_format(self, fmt: QTextCharFormat) -> FontFormat:
+        font = fmt.font()
+        color = fmt.foreground().color()
+        fontformat = self.fontformat.deepcopy()
+        fontformat.frgb = [color.red(), color.green(), color.blue()]
+        fontformat.font_weight = font.weight()
+        fontformat.font_family = storage_font_family(font.family(), fontformat.font_weight)
+        point_size = font.pointSizeF()
+        if point_size > 0:
+            fontformat.font_size = pt2px(point_size)
+        fontformat.bold = font.bold()
+        fontformat.underline = font.underline()
+        fontformat.italic = font.italic()
+        return fontformat
+
+    def uniform_document_fontformat(self) -> FontFormat:
+        doc = self.document()
+        block = doc.firstBlock()
+        uniform_format = None
+        compare_keys = {'font_family', 'font_size', 'font_weight', 'frgb', 'bold', 'italic', 'underline'}
+        while block.isValid():
+            it = block.begin()
+            while not it.atEnd():
+                fragment = it.fragment()
+                if fragment.length() > 0:
+                    fontformat = self._fontformat_from_char_format(fragment.charFormat())
+                    if uniform_format is None:
+                        uniform_format = fontformat
+                    elif any(uniform_format[key] != fontformat[key] for key in compare_keys):
+                        return None
+                it += 1
+            block = block.next()
+        return uniform_format
+
     def set_fontformat(self, ffmat: FontFormat, set_char_format=False, set_stroke_width=True, set_effect=True):
         self.repainting = True
         if self.fontformat.vertical != ffmat.vertical:
@@ -789,8 +823,9 @@ class TextBlkItem(QGraphicsTextItem):
             self.repaint_background()
 
     def updateBlkFormat(self):
-        fmt = self.get_fontformat()
-        self.blk.fontformat.merge(fmt)
+        fmt = self.uniform_document_fontformat()
+        if fmt is not None:
+            self.blk.fontformat.merge(fmt)
 
     def set_cursor_cfmt(self, cursor: QTextCursor, cfmt: QTextCharFormat, merge_char: bool = False):
         doc_is_empty = self.document().isEmpty()
