@@ -712,6 +712,7 @@ class FontFormatPanel(Widget):
 
     def set_mixed_fields(self, mixed_fields):
         self.mixed_fields = set(mixed_fields)
+        self.textadvancedfmt_panel.set_mixed_fields(self.mixed_fields)
         mixed_size_boxes = {
             'stroke_width': self.strokeWidthBox,
             'line_spacing': self.lineSpacingBox,
