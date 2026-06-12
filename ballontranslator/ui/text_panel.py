@@ -26,7 +26,12 @@ def mixed_checkbox_style():
     icon_fill = DARKFILL_ACTIVE if C.pcfg.darkmode else LIGHTFILL_ACTIVE
     icon_color = _icon_fill_color(icon_fill)
     return f"""
+QFontChecker {{
+    max-width: 34px;
+}}
 QFontChecker::indicator:indeterminate {{
+    width: 30px;
+    height: 30px;
     border: 2px solid {icon_color};
     background-color: {icon_color};
 }}
@@ -42,19 +47,46 @@ QFontChecker#FontUnderlineChecker::indicator:indeterminate {{
 QFontChecker#FontVerticalChecker::indicator:indeterminate {{
     image: url({themed_icon_url('fontfmt_vertical_activate.svg')});
 }}
+AlignmentChecker {{
+    margin: 0px;
+}}
 AlignmentChecker::indicator:indeterminate {{
+    height: 28px;
+    width: 28px;
+    border: 2px solid {icon_color};
     background-color: {icon_color};
 }}
 AlignmentChecker#AlignLeftChecker::indicator:indeterminate {{
+    border-right: none;
+    min-width: 36px;
+    max-width: 36px;
     image: url({themed_icon_url('fontfmt_alignl_activate.svg')});
 }}
 AlignmentChecker#AlignCenterChecker::indicator:indeterminate {{
+    border-right: none;
+    border-left: none;
+    min-width: 36px;
+    max-width: 36px;
     image: url({themed_icon_url('fontfmt_alignc_activate.svg')});
 }}
 AlignmentChecker#AlignRightChecker::indicator:indeterminate {{
+    border-left: none;
+    min-width: 35px;
+    max-width: 35px;
     image: url({themed_icon_url('fontfmt_alignr_activate.svg')});
 }}
 """
+
+
+def set_checker_mixed_style(checker):
+    checker.setStyleSheet(mixed_checkbox_style())
+
+
+def reset_checker_style(checker):
+    if hasattr(checker, 'resetStyleSheet'):
+        checker.resetStyleSheet()
+    else:
+        checker.setStyleSheet("")
 
 
 COLOR_FIELDS = {'frgb', 'srgb', 'shadow_color', 'gradient_start_color', 'gradient_end_color'}
@@ -161,13 +193,13 @@ class AlignmentBtnGroup(QFrame):
             checker.blockSignals(True)
             checker.setTristate(True)
             checker.setCheckState(Qt.CheckState.PartiallyChecked)
-            checker.setStyleSheet(mixed_checkbox_style())
+            set_checker_mixed_style(checker)
             checker.blockSignals(False)
 
     def alignBtnPressed(self):
         for checker in self._checkers():
             checker.setTristate(False)
-            checker.setStyleSheet("")
+            reset_checker_style(checker)
         btn = self.sender()
         if btn == self.alignLeftChecker:
             self.alignLeftChecker.setChecked(True)
@@ -188,7 +220,7 @@ class AlignmentBtnGroup(QFrame):
     def setAlignment(self, alignment: int):
         for checker in self._checkers():
             checker.setTristate(False)
-            checker.setStyleSheet("")
+            reset_checker_style(checker)
         if alignment == 0:
             self.alignLeftChecker.setChecked(True)
             self.alignCenterChecker.setChecked(False)
@@ -227,14 +259,14 @@ class FormatGroupBtn(QFrame):
         btn.setTristate(True)
         btn.setCheckState(Qt.CheckState.PartiallyChecked)
         btn.setProperty('mixed', True)
-        btn.setStyleSheet(mixed_checkbox_style())
+        set_checker_mixed_style(btn)
         btn.blockSignals(False)
 
     def clearMixed(self):
         for btn in (self.boldBtn, self.italicBtn, self.underlineBtn):
             btn.blockSignals(True)
             btn.setProperty('mixed', False)
-            btn.setStyleSheet("")
+            reset_checker_style(btn)
             btn.setTristate(False)
             btn.blockSignals(False)
 
@@ -809,7 +841,7 @@ class FontFormatPanel(Widget):
         self.lineSpacingBox.setValue(font_format.line_spacing)
         self.letterSpacingBox.setValue(font_format.letter_spacing)
         self.verticalChecker.setTristate(False)
-        self.verticalChecker.setStyleSheet("")
+        reset_checker_style(self.verticalChecker)
         self.verticalChecker.setChecked(font_format.vertical)
         weight = font_format.font_weight if font_format.font_weight is not None else (700 if font_format.bold else 400)
         self._sync_weight_controls(weight, update_active=False)
@@ -862,7 +894,7 @@ class FontFormatPanel(Widget):
             self.verticalChecker.blockSignals(True)
             self.verticalChecker.setTristate(True)
             self.verticalChecker.setCheckState(Qt.CheckState.PartiallyChecked)
-            self.verticalChecker.setStyleSheet(mixed_checkbox_style())
+            set_checker_mixed_style(self.verticalChecker)
             self.verticalChecker.blockSignals(False)
         if 'alignment' in self.mixed_fields:
             self.alignBtnGroup.setMixed()
