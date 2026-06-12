@@ -17,6 +17,38 @@ from .text_style_presets import TextStylePresetPanel
 from . import funcmaps as FM
 
 
+MIXED_CHECKBOX_STYLE = """
+QFontChecker::indicator:indeterminate {
+    border: 2px solid rgb(70, 70, 70);
+    background-color: rgb(70, 70, 70);
+}
+QFontChecker#FontBoldChecker::indicator:indeterminate {
+    image: url(resources/icons/fontfmt_bold_activate.svg);
+}
+QFontChecker#FontItalicChecker::indicator:indeterminate {
+    image: url(resources/icons/fontfmt_italic_activate.svg);
+}
+QFontChecker#FontUnderlineChecker::indicator:indeterminate {
+    image: url(resources/icons/fontfmt_underline_activate.svg);
+}
+QFontChecker#FontVerticalChecker::indicator:indeterminate {
+    image: url(resources/icons/fontfmt_vertical_activate.svg);
+}
+AlignmentChecker::indicator:indeterminate {
+    background-color: rgb(70, 70, 70);
+}
+AlignmentChecker#AlignLeftChecker::indicator:indeterminate {
+    image: url(resources/icons/fontfmt_alignl_activate.svg);
+}
+AlignmentChecker#AlignCenterChecker::indicator:indeterminate {
+    image: url(resources/icons/fontfmt_alignc_activate.svg);
+}
+AlignmentChecker#AlignRightChecker::indicator:indeterminate {
+    image: url(resources/icons/fontfmt_alignr_activate.svg);
+}
+"""
+
+
 class LineEdit(QLineEdit):
 
     return_pressed_wochange = Signal()
@@ -81,7 +113,7 @@ class AlignmentBtnGroup(QFrame):
             checker.blockSignals(True)
             checker.setTristate(True)
             checker.setCheckState(Qt.CheckState.PartiallyChecked)
-            checker.setStyleSheet("QCheckBox { background-color: rgb(90, 90, 90); }")
+            checker.setStyleSheet(MIXED_CHECKBOX_STYLE)
             checker.blockSignals(False)
 
     def alignBtnPressed(self):
@@ -147,7 +179,7 @@ class FormatGroupBtn(QFrame):
         btn.setTristate(True)
         btn.setCheckState(Qt.CheckState.PartiallyChecked)
         btn.setProperty('mixed', True)
-        btn.setStyleSheet("QCheckBox { background-color: rgb(90, 90, 90); }")
+        btn.setStyleSheet(MIXED_CHECKBOX_STYLE)
         btn.blockSignals(False)
 
     def clearMixed(self):
@@ -783,7 +815,7 @@ class FontFormatPanel(Widget):
             self.verticalChecker.blockSignals(True)
             self.verticalChecker.setTristate(True)
             self.verticalChecker.setCheckState(Qt.CheckState.PartiallyChecked)
-            self.verticalChecker.setStyleSheet("QCheckBox { background-color: rgb(90, 90, 90); }")
+            self.verticalChecker.setStyleSheet(MIXED_CHECKBOX_STYLE)
             self.verticalChecker.blockSignals(False)
         if 'alignment' in self.mixed_fields:
             self.alignBtnGroup.setMixed()
