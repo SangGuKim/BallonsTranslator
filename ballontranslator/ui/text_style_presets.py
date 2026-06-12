@@ -392,6 +392,13 @@ class TextStylePresetPanel(PanelArea):
         textstylelabel.apply_fontfmt.connect(self.apply_fontfmt)
         self.flayout.insertWidget(self.count(), textstylelabel)
 
+    def setArrowButtonsEnabled(self, apply_enabled: bool, update_enabled: bool):
+        for item in self.flayout._items:
+            widget = item.widget()
+            if isinstance(widget, TextStyleLabel):
+                widget.apply_btn.setEnabled(apply_enabled)
+                widget.update_btn.setEnabled(update_enabled)
+
     def on_deletebtn_clicked(self):
         w: TextStyleLabel = self.sender()
         self.removeStyleLabel(w)
