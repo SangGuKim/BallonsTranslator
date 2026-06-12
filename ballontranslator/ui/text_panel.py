@@ -14,38 +14,46 @@ from .custom_widget import Widget, ColorPickerLabel, ClickableLabel, CheckableLa
 from .textitem import TextBlkItem, storage_font_family
 from .text_advanced_format import TextAdvancedFormatPanel
 from .text_style_presets import TextStylePresetPanel
+from .misc import DARKFILL_ACTIVE, LIGHTFILL_ACTIVE, themed_icon_url
 from . import funcmaps as FM
 
 
-MIXED_CHECKBOX_STYLE = """
-QFontChecker::indicator:indeterminate {
-    border: 2px solid rgb(70, 70, 70);
-    background-color: rgb(70, 70, 70);
-}
-QFontChecker#FontBoldChecker::indicator:indeterminate {
-    image: url(resources/icons/fontfmt_bold_activate.svg);
-}
-QFontChecker#FontItalicChecker::indicator:indeterminate {
-    image: url(resources/icons/fontfmt_italic_activate.svg);
-}
-QFontChecker#FontUnderlineChecker::indicator:indeterminate {
-    image: url(resources/icons/fontfmt_underline_activate.svg);
-}
-QFontChecker#FontVerticalChecker::indicator:indeterminate {
-    image: url(resources/icons/fontfmt_vertical_activate.svg);
-}
-AlignmentChecker::indicator:indeterminate {
-    background-color: rgb(70, 70, 70);
-}
-AlignmentChecker#AlignLeftChecker::indicator:indeterminate {
-    image: url(resources/icons/fontfmt_alignl_activate.svg);
-}
-AlignmentChecker#AlignCenterChecker::indicator:indeterminate {
-    image: url(resources/icons/fontfmt_alignc_activate.svg);
-}
-AlignmentChecker#AlignRightChecker::indicator:indeterminate {
-    image: url(resources/icons/fontfmt_alignr_activate.svg);
-}
+def _icon_fill_color(fill_attr: str) -> str:
+    return fill_attr.split('"')[1]
+
+
+def mixed_checkbox_style():
+    icon_fill = DARKFILL_ACTIVE if C.pcfg.darkmode else LIGHTFILL_ACTIVE
+    icon_color = _icon_fill_color(icon_fill)
+    return f"""
+QFontChecker::indicator:indeterminate {{
+    border: 2px solid {icon_color};
+    background-color: {icon_color};
+}}
+QFontChecker#FontBoldChecker::indicator:indeterminate {{
+    image: url({themed_icon_url('fontfmt_bold_activate.svg')});
+}}
+QFontChecker#FontItalicChecker::indicator:indeterminate {{
+    image: url({themed_icon_url('fontfmt_italic_activate.svg')});
+}}
+QFontChecker#FontUnderlineChecker::indicator:indeterminate {{
+    image: url({themed_icon_url('fontfmt_underline_activate.svg')});
+}}
+QFontChecker#FontVerticalChecker::indicator:indeterminate {{
+    image: url({themed_icon_url('fontfmt_vertical_activate.svg')});
+}}
+AlignmentChecker::indicator:indeterminate {{
+    background-color: {icon_color};
+}}
+AlignmentChecker#AlignLeftChecker::indicator:indeterminate {{
+    image: url({themed_icon_url('fontfmt_alignl_activate.svg')});
+}}
+AlignmentChecker#AlignCenterChecker::indicator:indeterminate {{
+    image: url({themed_icon_url('fontfmt_alignc_activate.svg')});
+}}
+AlignmentChecker#AlignRightChecker::indicator:indeterminate {{
+    image: url({themed_icon_url('fontfmt_alignr_activate.svg')});
+}}
 """
 
 
@@ -121,7 +129,7 @@ class AlignmentBtnGroup(QFrame):
             checker.blockSignals(True)
             checker.setTristate(True)
             checker.setCheckState(Qt.CheckState.PartiallyChecked)
-            checker.setStyleSheet(MIXED_CHECKBOX_STYLE)
+            checker.setStyleSheet(mixed_checkbox_style())
             checker.blockSignals(False)
 
     def alignBtnPressed(self):
@@ -187,7 +195,7 @@ class FormatGroupBtn(QFrame):
         btn.setTristate(True)
         btn.setCheckState(Qt.CheckState.PartiallyChecked)
         btn.setProperty('mixed', True)
-        btn.setStyleSheet(MIXED_CHECKBOX_STYLE)
+        btn.setStyleSheet(mixed_checkbox_style())
         btn.blockSignals(False)
 
     def clearMixed(self):
@@ -823,7 +831,7 @@ class FontFormatPanel(Widget):
             self.verticalChecker.blockSignals(True)
             self.verticalChecker.setTristate(True)
             self.verticalChecker.setCheckState(Qt.CheckState.PartiallyChecked)
-            self.verticalChecker.setStyleSheet(MIXED_CHECKBOX_STYLE)
+            self.verticalChecker.setStyleSheet(mixed_checkbox_style())
             self.verticalChecker.blockSignals(False)
         if 'alignment' in self.mixed_fields:
             self.alignBtnGroup.setMixed()
