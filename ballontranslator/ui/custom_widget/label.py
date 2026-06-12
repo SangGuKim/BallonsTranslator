@@ -3,7 +3,7 @@ from typing import List, Union, Tuple
 import numpy as np
 from qtpy.QtWidgets import QGraphicsOpacityEffect, QLabel, QColorDialog, QMenu
 from qtpy.QtCore import  Qt, QPropertyAnimation, QEasingCurve, Signal
-from qtpy.QtGui import QMouseEvent, QWheelEvent, QColor, QPixmap, QPainter
+from qtpy.QtGui import QMouseEvent, QWheelEvent, QColor, QPixmap, QPainter, QPen
 
 
 from ballontranslator.utils.shared import CONFIG_FONTSIZE_CONTENT
@@ -55,7 +55,7 @@ class ColorPickerLabel(QLabel):
         btn = event.button()
         if btn == Qt.MouseButton.LeftButton:
             self.changingColor.emit()
-            color = QColorDialog.getColor(self.color or QColor(255, 255, 255), self)
+            color = QColorDialog.getColor(self.color or QColor(255, 255, 255))
             is_valid = color.isValid()
             if is_valid:
                 self.setPickerColor(color)
@@ -75,16 +75,15 @@ class ColorPickerLabel(QLabel):
             width = max(size.width(), 24)
             height = max(size.height(), 24)
             pixmap = QPixmap(width, height)
+            pixmap.fill(QColor(255, 255, 255))
             painter = QPainter(pixmap)
-            cell = max(min(width, height) // 2, 8)
-            colors = (QColor(245, 245, 245), QColor(80, 80, 80))
-            for y in range(0, height, cell):
-                for x in range(0, width, cell):
-                    painter.fillRect(x, y, cell, cell, colors[((x // cell) + (y // cell)) % 2])
+            pen = QPen(QColor(70, 70, 70), max(3, min(width, height) // 6))
+            painter.setPen(pen)
+            painter.drawLine(0, height, width, 0)
             painter.end()
             self.setPixmap(pixmap)
             self.setScaledContents(True)
-            self.setStyleSheet("border: 2px solid rgb(70, 70, 70);")
+            self.setStyleSheet("background-color: white;")
 
     def setPickerColor(self, color: Union[QColor, List, Tuple]):
         self.mixed = False

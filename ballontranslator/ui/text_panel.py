@@ -81,11 +81,13 @@ class AlignmentBtnGroup(QFrame):
             checker.blockSignals(True)
             checker.setTristate(True)
             checker.setCheckState(Qt.CheckState.PartiallyChecked)
+            checker.setStyleSheet("QCheckBox { background-color: rgb(90, 90, 90); }")
             checker.blockSignals(False)
 
     def alignBtnPressed(self):
         for checker in self._checkers():
             checker.setTristate(False)
+            checker.setStyleSheet("")
         btn = self.sender()
         if btn == self.alignLeftChecker:
             self.alignLeftChecker.setChecked(True)
@@ -106,6 +108,7 @@ class AlignmentBtnGroup(QFrame):
     def setAlignment(self, alignment: int):
         for checker in self._checkers():
             checker.setTristate(False)
+            checker.setStyleSheet("")
         if alignment == 0:
             self.alignLeftChecker.setChecked(True)
             self.alignCenterChecker.setChecked(False)
@@ -144,7 +147,7 @@ class FormatGroupBtn(QFrame):
         btn.setTristate(True)
         btn.setCheckState(Qt.CheckState.PartiallyChecked)
         btn.setProperty('mixed', True)
-        btn.setStyleSheet("QCheckBox { background-color: rgba(160, 160, 160, 90); border: 2px dashed rgb(90, 90, 90); }")
+        btn.setStyleSheet("QCheckBox { background-color: rgb(90, 90, 90); }")
         btn.blockSignals(False)
 
     def clearMixed(self):
@@ -726,6 +729,7 @@ class FontFormatPanel(Widget):
         self.lineSpacingBox.setValue(font_format.line_spacing)
         self.letterSpacingBox.setValue(font_format.letter_spacing)
         self.verticalChecker.setTristate(False)
+        self.verticalChecker.setStyleSheet("")
         self.verticalChecker.setChecked(font_format.vertical)
         weight = font_format.font_weight if font_format.font_weight is not None else (700 if font_format.bold else 400)
         self._sync_weight_controls(weight, update_active=False)
@@ -779,6 +783,7 @@ class FontFormatPanel(Widget):
             self.verticalChecker.blockSignals(True)
             self.verticalChecker.setTristate(True)
             self.verticalChecker.setCheckState(Qt.CheckState.PartiallyChecked)
+            self.verticalChecker.setStyleSheet("QCheckBox { background-color: rgb(90, 90, 90); }")
             self.verticalChecker.blockSignals(False)
         if 'alignment' in self.mixed_fields:
             self.alignBtnGroup.setMixed()
@@ -924,8 +929,13 @@ class FontFormatPanel(Widget):
             if not focus_on_fmtoptions:
                 # Store the current text block's format before switching to global
                 if self.textblk_item is not None:
-                    # Save all format properties including gradient state
-                    self.textblk_item.fontformat = copy.deepcopy(C.active_format)
+                    if self.textblk_item.isEditing():
+                        uniform_format = self.textblk_item.uniform_document_fontformat()
+                        if uniform_format is not None:
+                            self.textblk_item.fontformat = uniform_format
+                    else:
+                        # Save all format properties including gradient state
+                        self.textblk_item.fontformat = copy.deepcopy(C.active_format)
                 self.textblk_item = None
                 self.textblk_items = []
                 if multi_select:

@@ -687,6 +687,12 @@ class TextBlkItem(QGraphicsTextItem):
         return normalize_rich_text_font_families(html.replace('>\n<', '><'))
 
     def get_fontformat(self) -> FontFormat:
+        if not self.isEditing():
+            uniform_format = self.uniform_document_fontformat()
+            if uniform_format is not None:
+                return uniform_format
+            return self.fontformat.deepcopy()
+
         fmt = self.textCursor().charFormat()
         font = fmt.font()
         color = fmt.foreground().color()
@@ -694,10 +700,9 @@ class TextBlkItem(QGraphicsTextItem):
         fontformat.frgb = [color.red(), color.green(), color.blue()]
         fontformat.font_weight = font.weight()
         fontformat.font_family = storage_font_family(font.family(), fontformat.font_weight)
-        if self.isEditing():
-            fontformat.font_size = pt2px(font.pointSizeF())
-        else:
-            fontformat.font_size = self.minFontSize()
+        point_size = font.pointSizeF()
+        if point_size > 0:
+            fontformat.font_size = pt2px(point_size)
         fontformat.bold = font.bold()
         fontformat.underline = font.underline()
         fontformat.italic = font.italic()
@@ -742,6 +747,14 @@ class TextBlkItem(QGraphicsTextItem):
                 it += 1
             block = block.next()
         return uniform_format
+
+    def cursor_selects_entire_document(self) -> bool:
+        cursor = self.textCursor()
+        if not cursor.hasSelection():
+            return False
+        doc_cursor = QTextCursor(self.document())
+        doc_cursor.select(QTextCursor.SelectionType.Document)
+        return cursor.selectionStart() <= doc_cursor.selectionStart() and cursor.selectionEnd() >= doc_cursor.selectionEnd()
 
     def set_fontformat(self, ffmat: FontFormat, set_char_format=False, set_stroke_width=True, set_effect=True):
         self.repainting = True
