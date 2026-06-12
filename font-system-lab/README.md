@@ -7,7 +7,12 @@ Windows/macOS/Linux에서 Qt가 실제로 어떤 폰트 정보를 주는지 비�
 ## 폴더 구조
 
 - `docs/`: 내부 검토용 설계/조사 문서와 PR용 영문 초안
-- `data/`: optional alias table 예시
+- `docs/font-implementation-worklog.md`: 구현 중 발견한 문제, 해결 방식, 최소 수정성 점검 기록
+- `docs/format-inspector-issues.md`: multi-select와 rich text selection format inspector 문제 정리
+- `docs/format-inspector-selection-design.md`: 글로벌 글꼴 형식, 프리셋, 다중 선택, Rich Text 선택 구간의 표시/버튼 정책
+- `docs/font-storage-policy-decision.md`: family group 저장과 face canonical 저장 정책 검토
+- `data/`: 과거 분리형 optional alias/group table 예시. 런타임 설정은
+  `config/font_registry.json`을 사용한다.
 - `tools/dump_font_info.py`: Qt가 주는 원본 폰트 정보와 custom font name table을 JSON으로 덤프한다.
 - `tools/probe_font_registry_logic.py`: 제안한 registry 정책을 적용했을 때의 picker 후보, weight, 경고를 요약한다.
 
