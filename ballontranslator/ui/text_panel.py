@@ -57,12 +57,44 @@ AlignmentChecker#AlignRightChecker::indicator:indeterminate {{
 """
 
 
+COLOR_FIELDS = {'frgb', 'srgb', 'shadow_color', 'gradient_start_color', 'gradient_end_color'}
+
+
+def _format_weight(font_format: FontFormat):
+    weight = font_format.font_weight
+    if weight is None:
+        weight = 700 if font_format.bold else 400
+    return int(weight)
+
+
+def _format_bold(font_format: FontFormat):
+    return bool(font_format.bold) or _format_weight(font_format) >= 700
+
+
+def _color_tuple(value):
+    if hasattr(value, 'tolist'):
+        value = value.tolist()
+    if not isinstance(value, (list, tuple)):
+        return value
+    return tuple(int(round(float(channel))) for channel in value)
+
+
 def format_values_equal(left, right):
     if isinstance(left, (list, tuple)) and isinstance(right, (list, tuple)):
         if len(left) != len(right):
             return False
         return all(format_values_equal(lval, rval) for lval, rval in zip(left, right))
     return left == right
+
+
+def format_field_equal(key: str, left_format: FontFormat, right_format: FontFormat):
+    if key in COLOR_FIELDS:
+        return _color_tuple(left_format[key]) == _color_tuple(right_format[key])
+    if key == 'font_weight':
+        return _format_weight(left_format) == _format_weight(right_format)
+    if key == 'bold':
+        return _format_bold(left_format) == _format_bold(right_format)
+    return format_values_equal(left_format[key], right_format[key])
 
 
 class LineEdit(QLineEdit):
@@ -806,7 +838,6 @@ class FontFormatPanel(Widget):
             self.fontWeightCombo.blockSignals(True)
             self.fontWeightCombo.setCurrentIndex(-1)
             self.fontWeightCombo.blockSignals(False)
-            self.formatBtnGroup.setMixed(self.formatBtnGroup.boldBtn)
         if 'bold' in self.mixed_fields:
             self.formatBtnGroup.setMixed(self.formatBtnGroup.boldBtn)
         if 'italic' in self.mixed_fields:
@@ -840,7 +871,7 @@ class FontFormatPanel(Widget):
             for key in aggregate_format.annotations_set():
                 if key.startswith('_') or not hasattr(font_format, key):
                     continue
-                if not format_values_equal(aggregate_format[key], font_format[key]):
+                if not format_field_equal(key, aggregate_format, font_format):
                     mixed_fields.add(key)
         if 'font_size' in mixed_fields:
             aggregate_format.font_size = sum(font_format.font_size for font_format in formats) / len(formats)
@@ -857,7 +888,7 @@ class FontFormatPanel(Widget):
 
     def fontformat_from_char_format(self, char_format, base_format: FontFormat):
         font = char_format.font()
-        color = char_format.foreground().color()
+        brush = char_format.foreground()
         font_format = base_format.deepcopy()
         font_weight = int(font.weight())
         font_format.font_family = storage_font_family(font.family(), font_weight)
@@ -868,7 +899,8 @@ class FontFormatPanel(Widget):
         point_size = char_format.fontPointSize() or font.pointSizeF()
         if point_size > 0:
             font_format.font_size = pt2px(point_size)
-        if color.isValid():
+        if brush.style() != Qt.BrushStyle.NoBrush:
+            color = brush.color()
             font_format.frgb = [color.red(), color.green(), color.blue()]
         return font_format
 
@@ -902,7 +934,7 @@ class FontFormatPanel(Widget):
         mixed_fields = set()
         for font_format in formats[1:]:
             for key in {'font_family', 'font_size', 'font_weight', 'frgb', 'bold', 'italic', 'underline'}:
-                if not format_values_equal(aggregate_format[key], font_format[key]):
+                if not format_field_equal(key, aggregate_format, font_format):
                     mixed_fields.add(key)
         return aggregate_format, mixed_fields
 
