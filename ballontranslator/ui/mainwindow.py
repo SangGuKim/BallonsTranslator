@@ -1361,7 +1361,7 @@ class MainWindow(mainwindow_cls):
         override_effect = pcfg.let_fnteffect_flag == 1
         override_writing_mode = pcfg.let_writing_mode_flag == 1
         override_font_family = pcfg.let_family_flag == 1
-        gf = self.textPanel.formatpanel.global_format
+        gf = self.textPanel.formatpanel.effective_global_format()
 
         inpaint_only = pcfg.module.enable_inpaint
         inpaint_only = inpaint_only and not (pcfg.module.enable_detect or pcfg.module.enable_ocr or pcfg.module.enable_translate)

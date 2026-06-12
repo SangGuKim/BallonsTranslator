@@ -529,6 +529,12 @@ class FontFormatPanel(Widget):
 
     def multi_block_mode(self):
         return bool(self.textblk_items)
+
+    def effective_global_format(self):
+        active_format = self.active_text_style_format()
+        if active_format is not None:
+            return active_format
+        return self.global_format
     
     def active_text_style_label(self):
         return self.textstyle_panel.active_text_style_label
