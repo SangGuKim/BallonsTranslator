@@ -687,7 +687,7 @@ class SceneTextManager(QObject):
 
     def onFormatTextblks(self, fmt: FontFormat = None):
         if fmt is None:
-            fmt = self.formatpanel.global_format
+            fmt = self.formatpanel.effective_global_format()
         self.apply_fontformat(fmt)
 
     def onAutoLayoutTextblks(self):
@@ -933,9 +933,10 @@ class SceneTextManager(QObject):
         xywh = np.copy(xyxy)
         xywh[[2, 3]] -= xywh[[0, 1]]
         block.set_lines_by_xywh(xywh)
-        block.src_is_vertical = self.formatpanel.global_format.vertical
+        global_format = self.formatpanel.effective_global_format()
+        block.src_is_vertical = global_format.vertical
         blk_item = TextBlkItem(block, len(self.textblk_item_list), set_format=False, show_rect=True)
-        blk_item.set_fontformat(self.formatpanel.global_format)
+        blk_item.set_fontformat(global_format)
         self.canvas.push_undo_command(CreateItemCommand(blk_item, self))
 
     def on_paste2selected_textitems(self):

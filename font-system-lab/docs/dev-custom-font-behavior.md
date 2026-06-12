@@ -320,7 +320,12 @@ sorted(shared.FONT_FAMILIES, key=str.casefold)
 
 - Qt가 반환한 family를 모두 수집한다.
 - 빈 문자열을 제거한다.
+- `??? ???`처럼 Qt/Windows backend에서 손상된 로컬 family로 보이는 값은
+  렌더링 family 후보에서 제외한다.
 - 중복을 제거한다.
+- name table의 English canonical family가 Qt 반환 family 중에 있거나, Qt
+  반환값이 모두 비어 있거나 손상되어 있으면 canonical family를 렌더링 family로
+  우선 사용한다.
 - 필요하면 ASCII 우선, 짧은 이름 우선 같은 휴리스틱을 적용한다.
 - 한국어 표시명을 원하면 `fontTools`로 name table의 Korean record
   (`langID=1042`)를 읽어 UI display name으로 따로 보관한다.
@@ -329,8 +334,10 @@ sorted(shared.FONT_FAMILIES, key=str.casefold)
 `font_family` 값과 호환성을 확인해야 한다.
 
 중요한 제약은 Qt 렌더링에 넘기는 family key와 UI에 보여주는 display name을
-분리해야 한다는 점이다. `font_family` 저장값은 Qt가 인식하는 family여야
-한다. 한국어 표시명은 별도 label/display role로만 쓰는 편이 안전하다.
+분리해야 한다는 점이다. `font_family` 저장값은 기존 project와 프리셋 호환을
+위해 canonical family를 유지한다. 렌더링은 resolver가 canonical/display/alias를
+받아 최종 family를 결정한다. 한국어 표시명은 별도 label/display role로만 쓰는
+편이 안전하다.
 
 ### 3. custom-only view와 global font database의 관계
 
