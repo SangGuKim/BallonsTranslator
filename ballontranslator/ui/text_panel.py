@@ -73,7 +73,19 @@ class AlignmentBtnGroup(QFrame):
         hlayout.addWidget(self.alignRightChecker)
         hlayout.setSpacing(0)
 
+    def _checkers(self):
+        return [self.alignLeftChecker, self.alignCenterChecker, self.alignRightChecker]
+
+    def setMixed(self):
+        for checker in self._checkers():
+            checker.blockSignals(True)
+            checker.setTristate(True)
+            checker.setCheckState(Qt.CheckState.PartiallyChecked)
+            checker.blockSignals(False)
+
     def alignBtnPressed(self):
+        for checker in self._checkers():
+            checker.setTristate(False)
         btn = self.sender()
         if btn == self.alignLeftChecker:
             self.alignLeftChecker.setChecked(True)
@@ -92,6 +104,8 @@ class AlignmentBtnGroup(QFrame):
             self.param_changed.emit('alignment', 1)
     
     def setAlignment(self, alignment: int):
+        for checker in self._checkers():
+            checker.setTristate(False)
         if alignment == 0:
             self.alignLeftChecker.setChecked(True)
             self.alignCenterChecker.setChecked(False)
@@ -682,6 +696,7 @@ class FontFormatPanel(Widget):
         self.strokeWidthBox.setValue(font_format.stroke_width)
         self.lineSpacingBox.setValue(font_format.line_spacing)
         self.letterSpacingBox.setValue(font_format.letter_spacing)
+        self.verticalChecker.setTristate(False)
         self.verticalChecker.setChecked(font_format.vertical)
         weight = font_format.font_weight if font_format.font_weight is not None else (700 if font_format.bold else 400)
         self._sync_weight_controls(weight, update_active=False)
@@ -697,6 +712,11 @@ class FontFormatPanel(Widget):
 
     def set_mixed_fields(self, mixed_fields):
         self.mixed_fields = set(mixed_fields)
+        mixed_size_boxes = {
+            'stroke_width': self.strokeWidthBox,
+            'line_spacing': self.lineSpacingBox,
+            'letter_spacing': self.letterSpacingBox,
+        }
         if 'font_family' in self.mixed_fields:
             self.familybox.blockSignals(True)
             self.familybox.setCurrentText('')
@@ -706,6 +726,11 @@ class FontFormatPanel(Widget):
                 self.fontsizebox.fcombobox.blockSignals(True)
                 self.fontsizebox.fcombobox.setCurrentText('')
                 self.fontsizebox.fcombobox.blockSignals(False)
+        for field, box in mixed_size_boxes.items():
+            if field in self.mixed_fields:
+                box.blockSignals(True)
+                box.setCurrentText('')
+                box.blockSignals(False)
         if 'font_weight' in self.mixed_fields:
             self.fontWeightCombo.blockSignals(True)
             self.fontWeightCombo.setCurrentIndex(-1)
@@ -733,6 +758,13 @@ class FontFormatPanel(Widget):
             self.colorPicker.setStyleSheet("background-color: rgba(160, 160, 160, 80); border: 1px dashed rgb(120, 120, 120);")
         if 'srgb' in self.mixed_fields:
             self.strokeColorPicker.setStyleSheet("background-color: rgba(160, 160, 160, 80); border: 1px dashed rgb(120, 120, 120);")
+        if 'vertical' in self.mixed_fields:
+            self.verticalChecker.blockSignals(True)
+            self.verticalChecker.setTristate(True)
+            self.verticalChecker.setCheckState(Qt.CheckState.PartiallyChecked)
+            self.verticalChecker.blockSignals(False)
+        if 'alignment' in self.mixed_fields:
+            self.alignBtnGroup.setMixed()
 
     def update_text_style_arrow_buttons(self, has_text_selection: bool = False, mixed_selection: bool = False):
         preset_only = self.active_text_style_label() is not None and not has_text_selection
