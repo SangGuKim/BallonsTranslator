@@ -3,11 +3,17 @@ from typing import List, Union, Tuple
 import numpy as np
 from qtpy.QtWidgets import QGraphicsOpacityEffect, QLabel, QColorDialog, QMenu
 from qtpy.QtCore import  Qt, QPropertyAnimation, QEasingCurve, Signal
-from qtpy.QtGui import QMouseEvent, QWheelEvent, QColor, QPixmap, QPainter, QPen
+from qtpy.QtGui import QMouseEvent, QWheelEvent, QColor, QPixmap, QPainter
 
 
 from ballontranslator.utils.shared import CONFIG_FONTSIZE_CONTENT
 from ballontranslator.utils import shared
+from ballontranslator.utils.config import pcfg
+from ..misc import DARKFILL_ACTIVE, LIGHTFILL_ACTIVE
+
+
+def _icon_fill_color(fill_attr: str) -> QColor:
+    return QColor(fill_attr.split('"')[1])
 
 
 class FadeLabel(QLabel):
@@ -77,9 +83,22 @@ class ColorPickerLabel(QLabel):
             pixmap = QPixmap(width, height)
             pixmap.fill(QColor(255, 255, 255))
             painter = QPainter(pixmap)
-            pen = QPen(QColor(70, 70, 70), max(3, min(width, height) // 6))
-            painter.setPen(pen)
-            painter.drawLine(0, height, width, 0)
+            fill_attr = DARKFILL_ACTIVE if pcfg.darkmode else LIGHTFILL_ACTIVE
+            mixed_color = _icon_fill_color(fill_attr)
+            for row in range(8):
+                for col in range(8):
+                    if (row + col) % 2 == 0:
+                        x0 = round(col * width / 8)
+                        y0 = round(row * height / 8)
+                        x1 = round((col + 1) * width / 8)
+                        y1 = round((row + 1) * height / 8)
+                        painter.fillRect(
+                            x0,
+                            y0,
+                            max(1, x1 - x0),
+                            max(1, y1 - y0),
+                            mixed_color,
+                        )
             painter.end()
             self.setPixmap(pixmap)
             self.setScaledContents(True)

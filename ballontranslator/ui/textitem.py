@@ -716,9 +716,11 @@ class TextBlkItem(QGraphicsTextItem):
 
     def _fontformat_from_char_format(self, fmt: QTextCharFormat) -> FontFormat:
         font = fmt.font()
-        color = fmt.foreground().color()
+        brush = fmt.foreground()
         fontformat = self.fontformat.deepcopy()
-        fontformat.frgb = [color.red(), color.green(), color.blue()]
+        if brush.style() != Qt.BrushStyle.NoBrush:
+            color = brush.color()
+            fontformat.frgb = [color.red(), color.green(), color.blue()]
         fontformat.font_weight = font.weight()
         fontformat.font_family = storage_font_family(font.family(), fontformat.font_weight)
         point_size = font.pointSizeF()
@@ -728,6 +730,21 @@ class TextBlkItem(QGraphicsTextItem):
         fontformat.underline = font.underline()
         fontformat.italic = font.italic()
         return fontformat
+
+    def _fontformat_field_equal(self, key: str, left: FontFormat, right: FontFormat) -> bool:
+        if key == 'frgb':
+            left_color = tuple(int(round(float(channel))) for channel in left.frgb)
+            right_color = tuple(int(round(float(channel))) for channel in right.frgb)
+            return left_color == right_color
+        if key == 'font_weight':
+            left_weight = left.font_weight if left.font_weight is not None else (700 if left.bold else 400)
+            right_weight = right.font_weight if right.font_weight is not None else (700 if right.bold else 400)
+            return int(left_weight) == int(right_weight)
+        if key == 'bold':
+            left_weight = left.font_weight if left.font_weight is not None else (700 if left.bold else 400)
+            right_weight = right.font_weight if right.font_weight is not None else (700 if right.bold else 400)
+            return (bool(left.bold) or int(left_weight) >= 700) == (bool(right.bold) or int(right_weight) >= 700)
+        return left[key] == right[key]
 
     def uniform_document_fontformat(self) -> FontFormat:
         doc = self.document()
@@ -742,7 +759,7 @@ class TextBlkItem(QGraphicsTextItem):
                     fontformat = self._fontformat_from_char_format(fragment.charFormat())
                     if uniform_format is None:
                         uniform_format = fontformat
-                    elif any(uniform_format[key] != fontformat[key] for key in compare_keys):
+                    elif any(not self._fontformat_field_equal(key, uniform_format, fontformat) for key in compare_keys):
                         return None
                 it += 1
             block = block.next()
