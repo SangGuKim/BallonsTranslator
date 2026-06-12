@@ -94,6 +94,59 @@ format으로 돌아가야 자연스럽다. 그러나 현재는 preset을 한 번
 편집 모드처럼 동작한다. 사용자는 preset을 잠시 선택해 수정했다고 생각했는데, 새
 text block 생성 기본값까지 바뀌었다고 느낄 수 있다.
 
+### Python 3.12 conda 환경에서 선택 해제 표시가 남음
+
+Python 3.11로 구성한 conda 환경에서는 정상적으로 해제되지만, Python 3.12로
+구성한 conda 환경에서는 global font format 영역의 여러 text style preset을
+차례로 선택할 때 선택됐다는 파란 테두리가 사라지지 않는 현상이 관찰됐다.
+이것저것 선택하면 여러 preset에 모두 파란 테두리가 남고, 한 preset만 활성화되어야
+한다는 현재 구현의 기대 표시와 어긋난다.
+
+같은 환경에서 텍스트 블록이 나열된 오른쪽 리스트도 선택 표시가 모두 풀리지 않는
+현상이 함께 관찰됐다. 따라서 이 문제는 text style preset만의 상태 모델 문제가
+아니라, Python 3.12 환경에 설치된 Qt/PyQt 조합에서 `setStyleSheet("")` 또는
+선택 해제 후 repaint/update가 기대대로 반영되지 않는 표시 갱신 문제일 가능성이
+있다.
+
+현재 코드상 선택 해제 자체는 다음 경로에서 수행된다.
+
+- `TextStylePresetPanel.on_stylelabel_activated()`는 기존
+  `active_text_style_label`에 `setActive(False)`를 호출한 뒤 새 label을 활성화한다.
+- `TextStyleLabel.setActive(False)`는 `setStyleSheet("")`로 파란 테두리를 지운다.
+- `TextEditListScrollArea.clearAllSelected()`와 `set_selected_list()`는
+  `TransPairWidget._set_checked_state(False)`를 호출하고, 이 함수도
+  `setStyleSheet("")`로 리스트 선택 표시를 지운다.
+
+즉 내부 상태는 해제되는데 화면에만 이전 stylesheet 결과가 남는다면, 후보 원인은
+다음 순서로 확인하는 것이 좋다.
+
+- Python 3.11 환경과 3.12 환경의 `PyQt6`, `PyQt6-Qt6`, `qtpy` 버전 차이
+- 선택 해제 직후 해당 widget의 `styleSheet()`, `active`, `checked` 값이 실제로
+  비어 있거나 `False`인지 여부
+- `setStyleSheet("")` 뒤 `style().unpolish()/polish()`, `update()`, `repaint()`
+  또는 동적 property 기반 stylesheet로 바꿨을 때 표시 잔상이 사라지는지 여부
+- `QGraphicsDropShadowEffect` hover 효과와 stylesheet border가 같은 이벤트 전환에서
+  충돌하는지 여부
+
+#### 2026-06-12 환경별 관찰 메모
+
+확인된 조합은 다음과 같다.
+
+- Python `3.11.14`, qtpy `2.4.3`, PyQt6, Qt `6.10.1`: 기존 정상 환경이다.
+- Python `3.12.13`, qtpy `2.4.3`, PyQt6, Qt `6.9.2`: global font format의 text
+  style preset 파란 테두리와 오른쪽 텍스트 블록 리스트 선택 표시가 해제되지 않는
+  문제가 재현됐다.
+- Python `3.12.13`, qtpy `2.4.3`, PyQt6, Qt `6.10.1`: preset 테두리 잔상은
+  사라졌지만, 텍스트 박스 다중 선택 시 원래 분홍색으로 표시되어야 하는 선택 색상이
+  3.11 환경과 다르게 오작동했다.
+- Python `3.12.13`, qtpy `2.4.3`, PyQt6, Qt `6.11.1`: 위 선택 표시 문제가
+  정상화된 것으로 확인됐다. 이때 pip 설치 결과는 `PyQt6==6.11.0`,
+  `PyQt6-Qt6==6.11.1`, `PyQt6-sip==13.11.1` 조합이었다.
+
+따라서 Python 3.12 지원 환경에서는 Qt `6.11.1` 이상 조합을 우선 권장 후보로
+본다. 다만 Qt minor 업데이트는 text rendering과 selection paint에 영향을 줄 수
+있으므로, requirements 하한을 올리기 전에는 주요 편집 흐름을 추가로 확인한다.
+
 ## 현재 구조의 핵심 원인
 
 ### active_format이 하나뿐이다
