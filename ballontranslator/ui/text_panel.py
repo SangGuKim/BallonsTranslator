@@ -174,8 +174,10 @@ class FontSizeBox(QFrame):
             self.param_changed.emit('rel_font_size', raito)
             return
         multi_size=False
-        if "+" in size:
-            size = size.strip("+")
+        marker = ''
+        if size.endswith(("+", "*")):
+            marker = size[-1]
+            size = size[:-1]
             multi_size=True
         size = float(size)
         newsize = int(round(size * raito))
@@ -188,7 +190,7 @@ class FontSizeBox(QFrame):
                 self.fcombobox.setCurrentText(str(newsize))
             else:
                 self.param_changed.emit('rel_font_size', raito)
-                self.fcombobox.setCurrentText(str(newsize)+"+")
+                self.fcombobox.setCurrentText(str(newsize) + marker)
 
     def onDownBtnClicked(self):
         raito = 0.75
@@ -197,8 +199,10 @@ class FontSizeBox(QFrame):
             self.param_changed.emit('rel_font_size', raito)
             return
         multi_size=False
-        if "+" in size:
-            size = size.strip("+")
+        marker = ''
+        if size.endswith(("+", "*")):
+            marker = size[-1]
+            size = size[:-1]
             multi_size=True
         size = float(size)
         newsize = int(round(size * raito))
@@ -211,7 +215,7 @@ class FontSizeBox(QFrame):
                 self.fcombobox.setCurrentText(str(newsize))
             else:
                 self.param_changed.emit('rel_font_size', raito)
-                self.fcombobox.setCurrentText(str(newsize)+"+")
+                self.fcombobox.setCurrentText(str(newsize) + marker)
     
 
 class FontFamilyComboBox(QComboBox):
@@ -548,11 +552,7 @@ class FontFormatPanel(Widget):
             self.update_active_preset_param(param_name, value)
         elif self.multi_block_mode():
             func(param_name, value, C.active_format, is_global=False, blkitems=self.textblk_items, set_focus=True, **func_kwargs)
-            if hasattr(C.active_format, param_name):
-                C.active_format[param_name] = value
-            if param_name in self.mixed_fields:
-                self.mixed_fields.remove(param_name)
-                self.update_text_style_arrow_buttons(has_text_selection=True, mixed_selection=bool(self.mixed_fields))
+            self.refresh_multi_block_format()
         elif self.global_mode():
             func(param_name, value, self.global_format, is_global=True, **func_kwargs)
             self.update_text_style_label()
@@ -664,7 +664,7 @@ class FontFormatPanel(Widget):
             mul = 0.01
         self.lineSpacingBox.setValue(self.lineSpacingBox.value() + delta * mul)
 
-    def set_active_format(self, font_format: FontFormat, multi_size=False):
+    def set_active_format(self, font_format: FontFormat, size_marker=''):
         C.active_format = font_format
         self.familybox.blockSignals(True)
         font_size = round(font_format.font_size, 1)
@@ -672,8 +672,8 @@ class FontFormatPanel(Widget):
             font_size = str(int(font_size))
         else:
             font_size = f'{font_size:.1f}'
-        if multi_size:
-            font_size += "+"
+        if size_marker:
+            font_size += size_marker
         self.fontsizebox.fcombobox.setCurrentText(font_size)
         self.familybox.set_current_family(font_format.font_family)
         self._refresh_weight_combo(font_format)
@@ -702,9 +702,10 @@ class FontFormatPanel(Widget):
             self.familybox.setCurrentText('')
             self.familybox.blockSignals(False)
         if 'font_size' in self.mixed_fields:
-            self.fontsizebox.fcombobox.blockSignals(True)
-            self.fontsizebox.fcombobox.setCurrentText('')
-            self.fontsizebox.fcombobox.blockSignals(False)
+            if not self.fontsizebox.getFontSize().endswith('*'):
+                self.fontsizebox.fcombobox.blockSignals(True)
+                self.fontsizebox.fcombobox.setCurrentText('')
+                self.fontsizebox.fcombobox.blockSignals(False)
         if 'font_weight' in self.mixed_fields:
             self.fontWeightCombo.blockSignals(True)
             self.fontWeightCombo.setCurrentIndex(-1)
@@ -740,16 +741,27 @@ class FontFormatPanel(Widget):
         self.textstyle_panel.setArrowButtonsEnabled(apply_enabled, update_enabled)
 
     def aggregate_textblk_formats(self, textblk_items: List[TextBlkItem]):
-        aggregate_format = textblk_items[0].get_fontformat()
+        formats = [textblk_item.get_fontformat() for textblk_item in textblk_items]
+        aggregate_format = formats[0]
         mixed_fields = set()
-        for blkitem in textblk_items[1:]:
-            font_format = blkitem.get_fontformat()
+        for font_format in formats[1:]:
             for key in aggregate_format.annotations_set():
                 if key.startswith('_') or not hasattr(font_format, key):
                     continue
                 if aggregate_format[key] != font_format[key]:
                     mixed_fields.add(key)
+        if 'font_size' in mixed_fields:
+            aggregate_format.font_size = sum(font_format.font_size for font_format in formats) / len(formats)
         return aggregate_format, mixed_fields
+
+    def refresh_multi_block_format(self):
+        if not self.multi_block_mode():
+            return
+        aggregate_format, mixed_fields = self.aggregate_textblk_formats(self.textblk_items)
+        size_marker = '*' if 'font_size' in mixed_fields else ''
+        self.set_active_format(aggregate_format, size_marker=size_marker)
+        self.set_mixed_fields(mixed_fields)
+        self.update_text_style_arrow_buttons(has_text_selection=True, mixed_selection=bool(mixed_fields))
 
     def fontformat_from_char_format(self, char_format, base_format: FontFormat):
         font = char_format.font()
@@ -870,7 +882,8 @@ class FontFormatPanel(Widget):
                 if multi_select:
                     self.textblk_items = list(multi_select_items or [])
                     aggregate_format, mixed_fields = self.aggregate_textblk_formats(self.textblk_items)
-                    self.set_active_format(aggregate_format)
+                    size_marker = '*' if 'font_size' in mixed_fields else ''
+                    self.set_active_format(aggregate_format, size_marker=size_marker)
                     self.set_mixed_fields(mixed_fields)
                     self.set_formatpanel_title(self.multi_textblocks_title(multi_select_items))
                     self.update_text_style_arrow_buttons(has_text_selection=True, mixed_selection=bool(mixed_fields))
@@ -880,7 +893,7 @@ class FontFormatPanel(Widget):
                     self.set_globalfmt_title()
                     self.update_text_style_arrow_buttons()
                 else:
-                    self.set_active_format(self.global_format, multi_select)
+                    self.set_active_format(self.global_format)
                     self.set_mixed_fields(set())
                     self.set_globalfmt_title()
                     self.update_text_style_arrow_buttons()
@@ -897,8 +910,8 @@ class FontFormatPanel(Widget):
                     blk_fmt.gradient_size = textblk_item.fontformat.gradient_size
                 self.textblk_item = textblk_item
                 self.textblk_items = []
-                multi_size = not textblk_item.isEditing() and textblk_item.isMultiFontSize()
-                self.set_active_format(blk_fmt, multi_size)
+                size_marker = '+' if not textblk_item.isEditing() and textblk_item.isMultiFontSize() else ''
+                self.set_active_format(blk_fmt, size_marker=size_marker)
                 self.set_mixed_fields(set())
                 self.set_formatpanel_title(f'TextBlock #{textblk_item.idx}')
                 self.update_text_style_arrow_buttons(has_text_selection=True)
