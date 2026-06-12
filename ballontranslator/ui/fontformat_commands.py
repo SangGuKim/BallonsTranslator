@@ -101,7 +101,8 @@ def ffmt_change_bold(param_name: str, values: str, act_ffmt: FontFormat, is_glob
     if weights:
         act_ffmt.font_weight = weights[0]
     for blkitem, weight in zip(blkitems, weights):
-        blkitem.fontformat.font_weight = weight
+        if not blkitem.isEditing() or blkitem.cursor_selects_entire_document():
+            blkitem.fontformat.font_weight = weight
         blkitem.setFontWeight(weight, **set_kwargs)
 
 @font_formating(push_undostack=True)
