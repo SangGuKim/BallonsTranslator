@@ -202,7 +202,7 @@ class TextAdvancedFormatPanel(PanelArea):
         box.blockSignals(False)
 
     def _set_color_mixed(self, label):
-        label.setStyleSheet("background-color: rgba(160, 160, 160, 80); border: 1px dashed rgb(120, 120, 120);")
+        label.setMixed(True)
 
     def set_active_format(self, font_format: FontFormat):
         self.active_format = font_format

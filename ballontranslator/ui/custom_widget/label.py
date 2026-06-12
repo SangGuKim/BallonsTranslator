@@ -3,7 +3,7 @@ from typing import List, Union, Tuple
 import numpy as np
 from qtpy.QtWidgets import QGraphicsOpacityEffect, QLabel, QColorDialog, QMenu
 from qtpy.QtCore import  Qt, QPropertyAnimation, QEasingCurve, Signal
-from qtpy.QtGui import QMouseEvent, QWheelEvent, QColor
+from qtpy.QtGui import QMouseEvent, QWheelEvent, QColor, QPixmap, QPainter
 
 
 from ballontranslator.utils.shared import CONFIG_FONTSIZE_CONTENT
@@ -49,12 +49,13 @@ class ColorPickerLabel(QLabel):
         super().__init__(parent=parent, *args, **kwargs)
         self.color: QColor = None
         self.param_name = param_name
+        self.mixed = False
 
     def mousePressEvent(self, event: QMouseEvent):
         btn = event.button()
         if btn == Qt.MouseButton.LeftButton:
             self.changingColor.emit()
-            color = QColorDialog.getColor()
+            color = QColorDialog.getColor(self.color or QColor(255, 255, 255), self)
             is_valid = color.isValid()
             if is_valid:
                 self.setPickerColor(color)
@@ -66,7 +67,29 @@ class ColorPickerLabel(QLabel):
             if rst == apply_act and self.color is not None:
                 self.apply_color.emit(self.param_name, self.rgb())
 
+    def setMixed(self, mixed: bool):
+        self.mixed = mixed
+        if mixed:
+            self.color = QColor(255, 255, 255)
+            size = self.size()
+            width = max(size.width(), 24)
+            height = max(size.height(), 24)
+            pixmap = QPixmap(width, height)
+            painter = QPainter(pixmap)
+            cell = max(min(width, height) // 2, 8)
+            colors = (QColor(245, 245, 245), QColor(80, 80, 80))
+            for y in range(0, height, cell):
+                for x in range(0, width, cell):
+                    painter.fillRect(x, y, cell, cell, colors[((x // cell) + (y // cell)) % 2])
+            painter.end()
+            self.setPixmap(pixmap)
+            self.setScaledContents(True)
+            self.setStyleSheet("border: 2px solid rgb(70, 70, 70);")
+
     def setPickerColor(self, color: Union[QColor, List, Tuple]):
+        self.mixed = False
+        self.setPixmap(QPixmap())
+        self.setScaledContents(False)
         if not isinstance(color, QColor):
             if isinstance(color, np.ndarray):
                 color = np.round(color).astype(np.uint8).tolist()
