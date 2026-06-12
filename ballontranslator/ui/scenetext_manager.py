@@ -511,6 +511,7 @@ class SceneTextManager(QObject):
         textblk_item.propagate_user_edited.connect(self.on_propagate_textitem_edit)
         textblk_item.doc_size_changed.connect(self.onTextBlkItemSizeChanged)
         textblk_item.pasted.connect(self.onBlkitemPaste)
+        textblk_item.cursor_format_changed.connect(self.on_textitem_cursor_format_changed)
         return textblk_item
 
     def deleteTextblkItemList(self, blkitem_list: List[TextBlkItem], p_widget_list: List[TransPairWidget]):
@@ -592,6 +593,10 @@ class SceneTextManager(QObject):
         self.canvas.editing_textblkitem = None
         self.textblk_item_list[blk_id].setSelected(True)
         self.txtblkShapeControl.endEditing()
+
+    def on_textitem_cursor_format_changed(self, blk_id: int):
+        if blk_id < len(self.textblk_item_list):
+            self.formatpanel.update_rich_text_cursor_format(self.textblk_item_list[blk_id])
 
     def editingTextItem(self) -> TextBlkItem:
         if self.txtblkShapeControl.isVisible() and self.canvas.editing_textblkitem is not None:

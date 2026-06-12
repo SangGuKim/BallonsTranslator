@@ -9,9 +9,9 @@ from qtpy.QtGui import QFocusEvent, QMouseEvent, QTextCursor, QKeyEvent, QFont
 from ballontranslator.utils import shared
 from ballontranslator.utils import config as C
 from ballontranslator.utils.config import save_text_styles
-from ballontranslator.utils.fontformat import FontFormat, px2pt, LineSpacingType
+from ballontranslator.utils.fontformat import FontFormat, px2pt, pt2px, LineSpacingType
 from .custom_widget import Widget, ColorPickerLabel, ClickableLabel, CheckableLabel, TextCheckerLabel, AlignmentChecker, QFontChecker, SizeComboBox, SizeControlLabel, FontWeightComboBox
-from .textitem import TextBlkItem
+from .textitem import TextBlkItem, storage_font_family
 from .text_advanced_format import TextAdvancedFormatPanel
 from .text_style_presets import TextStylePresetPanel
 from . import funcmaps as FM
@@ -530,6 +530,9 @@ class FontFormatPanel(Widget):
     def multi_block_mode(self):
         return bool(self.textblk_items)
 
+    def rich_text_mode(self):
+        return self.textblk_item is not None and self.textblk_item.isEditing()
+
     def effective_global_format(self):
         active_format = self.active_text_style_format()
         if active_format is not None:
@@ -565,6 +568,8 @@ class FontFormatPanel(Widget):
             self.update_text_style_label()
         else:
             func(param_name, value, C.active_format, is_global=False, blkitems=self.textblk_item, set_focus=True, **func_kwargs)
+            if self.rich_text_mode():
+                self.update_rich_text_cursor_format(self.textblk_item)
 
     def update_active_preset_param(self, param_name: str, value):
         active_text_style_label = self.active_text_style_label()
@@ -690,6 +695,9 @@ class FontFormatPanel(Widget):
         self.verticalChecker.setChecked(font_format.vertical)
         weight = font_format.font_weight if font_format.font_weight is not None else (700 if font_format.bold else 400)
         self._sync_weight_controls(weight, update_active=False)
+        self.formatBtnGroup.boldBtn.setTristate(False)
+        self.formatBtnGroup.underlineBtn.setTristate(False)
+        self.formatBtnGroup.italicBtn.setTristate(False)
         self.formatBtnGroup.underlineBtn.setChecked(font_format.underline)
         self.formatBtnGroup.italicBtn.setChecked(font_format.italic)
         self.alignBtnGroup.setAlignment(font_format.alignment)
@@ -711,6 +719,29 @@ class FontFormatPanel(Widget):
             self.fontWeightCombo.blockSignals(True)
             self.fontWeightCombo.setCurrentIndex(-1)
             self.fontWeightCombo.blockSignals(False)
+            self.formatBtnGroup.boldBtn.blockSignals(True)
+            self.formatBtnGroup.boldBtn.setTristate(True)
+            self.formatBtnGroup.boldBtn.setCheckState(Qt.CheckState.PartiallyChecked)
+            self.formatBtnGroup.boldBtn.blockSignals(False)
+        if 'bold' in self.mixed_fields:
+            self.formatBtnGroup.boldBtn.blockSignals(True)
+            self.formatBtnGroup.boldBtn.setTristate(True)
+            self.formatBtnGroup.boldBtn.setCheckState(Qt.CheckState.PartiallyChecked)
+            self.formatBtnGroup.boldBtn.blockSignals(False)
+        if 'italic' in self.mixed_fields:
+            self.formatBtnGroup.italicBtn.blockSignals(True)
+            self.formatBtnGroup.italicBtn.setTristate(True)
+            self.formatBtnGroup.italicBtn.setCheckState(Qt.CheckState.PartiallyChecked)
+            self.formatBtnGroup.italicBtn.blockSignals(False)
+        if 'underline' in self.mixed_fields:
+            self.formatBtnGroup.underlineBtn.blockSignals(True)
+            self.formatBtnGroup.underlineBtn.setTristate(True)
+            self.formatBtnGroup.underlineBtn.setCheckState(Qt.CheckState.PartiallyChecked)
+            self.formatBtnGroup.underlineBtn.blockSignals(False)
+        if 'frgb' in self.mixed_fields:
+            self.colorPicker.setStyleSheet("background-color: rgba(160, 160, 160, 80); border: 1px dashed rgb(120, 120, 120);")
+        if 'srgb' in self.mixed_fields:
+            self.strokeColorPicker.setStyleSheet("background-color: rgba(160, 160, 160, 80); border: 1px dashed rgb(120, 120, 120);")
 
     def update_text_style_arrow_buttons(self, has_text_selection: bool = False, mixed_selection: bool = False):
         preset_only = self.active_text_style_label() is not None and not has_text_selection
@@ -729,6 +760,68 @@ class FontFormatPanel(Widget):
                 if aggregate_format[key] != font_format[key]:
                     mixed_fields.add(key)
         return aggregate_format, mixed_fields
+
+    def fontformat_from_char_format(self, char_format, base_format: FontFormat):
+        font = char_format.font()
+        color = char_format.foreground().color()
+        font_format = base_format.deepcopy()
+        font_weight = int(font.weight())
+        font_format.font_family = storage_font_family(font.family(), font_weight)
+        font_format.font_weight = font_weight
+        font_format.bold = font.bold()
+        font_format.italic = font.italic()
+        font_format.underline = font.underline()
+        point_size = char_format.fontPointSize() or font.pointSizeF()
+        if point_size > 0:
+            font_format.font_size = pt2px(point_size)
+        if color.isValid():
+            font_format.frgb = [color.red(), color.green(), color.blue()]
+        return font_format
+
+    def selected_rich_text_formats(self, textblk_item: TextBlkItem):
+        cursor = textblk_item.textCursor()
+        if not cursor.hasSelection():
+            return [self.fontformat_from_char_format(cursor.charFormat(), textblk_item.fontformat)]
+
+        doc = textblk_item.document()
+        sel_start = cursor.selectionStart()
+        sel_end = cursor.selectionEnd()
+        formats = []
+        block = doc.firstBlock()
+        while block.isValid():
+            it = block.begin()
+            while not it.atEnd():
+                fragment = it.fragment()
+                frag_start = fragment.position()
+                frag_end = frag_start + fragment.length()
+                if max(frag_start, sel_start) < min(frag_end, sel_end):
+                    formats.append(self.fontformat_from_char_format(fragment.charFormat(), textblk_item.fontformat))
+                it += 1
+            block = block.next()
+        if not formats:
+            formats.append(self.fontformat_from_char_format(cursor.charFormat(), textblk_item.fontformat))
+        return formats
+
+    def aggregate_rich_text_cursor_format(self, textblk_item: TextBlkItem):
+        formats = self.selected_rich_text_formats(textblk_item)
+        aggregate_format = formats[0]
+        mixed_fields = set()
+        for font_format in formats[1:]:
+            for key in {'font_family', 'font_size', 'font_weight', 'frgb', 'bold', 'italic', 'underline'}:
+                if aggregate_format[key] != font_format[key]:
+                    mixed_fields.add(key)
+        return aggregate_format, mixed_fields
+
+    def update_rich_text_cursor_format(self, textblk_item: TextBlkItem = None):
+        textblk_item = textblk_item or self.textblk_item
+        if textblk_item is None or not textblk_item.isEditing():
+            return
+        if textblk_item is not self.textblk_item:
+            return
+        aggregate_format, mixed_fields = self.aggregate_rich_text_cursor_format(textblk_item)
+        self.set_active_format(aggregate_format)
+        self.set_mixed_fields(mixed_fields)
+        self.update_text_style_arrow_buttons(has_text_selection=True, mixed_selection=bool(mixed_fields))
 
     def set_globalfmt_title(self):
         active_text_style_label = self.active_text_style_label()
@@ -819,6 +912,8 @@ class FontFormatPanel(Widget):
                 self.set_mixed_fields(set())
                 self.set_formatpanel_title(f'TextBlock #{textblk_item.idx}')
                 self.update_text_style_arrow_buttons(has_text_selection=True)
+                if textblk_item.isEditing():
+                    self.update_rich_text_cursor_format(textblk_item)
 
     def multi_textblocks_title(self, textblk_items: List[TextBlkItem] = None):
         if not textblk_items:

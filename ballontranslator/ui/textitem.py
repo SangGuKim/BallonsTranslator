@@ -105,6 +105,7 @@ class TextBlkItem(QGraphicsTextItem):
     undo_signal = Signal()
     push_undo_stack = Signal(int, bool)
     propagate_user_edited = Signal(int, str, bool)
+    cursor_format_changed = Signal(int)
 
     def __init__(self, blk: TextBlock = None, idx: int = 0, set_format=True, show_rect=False, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -569,6 +570,7 @@ class TextBlkItem(QGraphicsTextItem):
             cursor = self.textCursor()
             cursor.setPosition(hit)
             self.setTextCursor(cursor)
+        self.cursor_format_changed.emit(self.idx)
 
     def endEdit(self, keep_focus=True) -> None:
         self.end_edit.emit(self.idx)
@@ -628,6 +630,7 @@ class TextBlkItem(QGraphicsTextItem):
             self.startEdit(pos=event.pos())
         else:
             super().mouseDoubleClickEvent(event)
+            self.cursor_format_changed.emit(self.idx)
         
     def mouseMoveEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         super().mouseMoveEvent(event)  
@@ -649,6 +652,13 @@ class TextBlkItem(QGraphicsTextItem):
             if self.oldPos != self.pos():
                 self.moved.emit()
         super().mouseReleaseEvent(event)
+        if self.isEditing():
+            self.cursor_format_changed.emit(self.idx)
+
+    def keyReleaseEvent(self, event: QKeyEvent) -> None:
+        super().keyReleaseEvent(event)
+        if self.isEditing():
+            self.cursor_format_changed.emit(self.idx)
 
     def hoverMoveEvent(self, event: QGraphicsSceneHoverEvent) -> None:
         self.hover_move.emit(self.idx)
