@@ -244,6 +244,47 @@ Field meanings:
 - `alias_source`: whether aliases came from custom font name tables, optional
   system alias data, or no merge data
 
+## Additional Corrections Found During Implementation
+
+Several corrections were added after the initial design while validating
+Paperlogy and Korean custom fonts. These should be mentioned in the PR because
+they explain why the implementation does more than list deduplication.
+
+### Prefer OS/2 `usWeightClass` for custom fonts
+
+For custom fonts, the registry should prefer the font file's OS/2
+`usWeightClass` over Qt style weights or style-name guessing. Qt can expose
+weights through backend-specific or Qt5-style values, while `usWeightClass`
+records the font vendor's declared OpenType weight.
+
+Some vendors intentionally store light faces as `250` instead of the common
+`100`/`200` values to avoid old Windows GDI rendering problems. If multiple
+faces in the same family share that value and their style names clearly identify
+different weights, the runtime registry may disambiguate them to standard
+picker weights such as `100`, `200`, and `300`. This is a runtime selection
+repair, not a claim that the source font metadata is invalid.
+
+### Ignore corrupted Qt family candidates
+
+On some Windows/Qt combinations, localized font names can be returned as strings
+made only of question marks and spaces, such as `??? ???`. These values should
+not be used as rendering families or aliases. If the name table provides a
+canonical or display family, prefer that metadata and keep only non-corrupted Qt
+families as aliases.
+
+### Keep entry keys and face keys separate
+
+Multiple faces in one picker family often share family-level aliases. Registering
+those aliases as face-level resolve keys can make a family request resolve to an
+arbitrary face before the requested weight is considered. For example, resolving
+`Paperlogy` with weight `800` must select the ExtraBold face, not whichever face
+last claimed the `Paperlogy` alias.
+
+The registry index should therefore use canonical, display, and Qt family names
+as entry-level keys. Face-level keys should be registered only when they are
+unique within the entry and are not also entry-level keys. The final face should
+then be selected from the entry with the requested weight.
+
 ## Resolver Policy
 
 Resolve an existing saved `font_family` in this order:

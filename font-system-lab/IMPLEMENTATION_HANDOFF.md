@@ -7,6 +7,15 @@
 ## 현재 결론
 
 - custom font는 Qt 결과에만 기대지 말고 TTF/OTF/TTC `name` table을 직접 읽는다.
+- custom font weight는 Qt weight 추정보다 OS/2 `usWeightClass`를 우선한다.
+- 같은 family 안에서 `usWeightClass=250` 같은 vendor compatibility 값이 중복되면,
+  style name으로 명확히 구분 가능한 경우에만 runtime picker weight를 표준값으로
+  분리한다. 이는 구형 Windows GDI 회피용 metadata를 사용자 선택 가능하게 보정하는
+  처리이지, 원본 폰트 값을 잘못됐다고 간주하는 처리가 아니다.
+- Qt가 `??? ???`처럼 공백과 `?`만 있는 손상된 family를 반환하면 렌더링 family와
+  alias 후보에서 제외한다.
+- family-level alias를 face-level resolve key로 무조건 등록하지 않는다. 같은 family
+  안에서 유일한 face key만 등록해야 weight별 face 선택이 깨지지 않는다.
 - system font는 기본적으로 Qt가 반환한 family/style/weight를 그대로 사용한다.
 - system alias는 자동 추정으로 병합하지 않는다.
 - `config/font_registry.json`의 `system_aliases`가 제공된 경우에만 명시된 group을

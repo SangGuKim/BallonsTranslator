@@ -303,6 +303,45 @@ fallback 예시는 다음과 같다.
 - 모든 이름이 비어 있으면 파일 stem을 display fallback으로 쓰되, 저장명으로는
   사용하지 않는다.
 
+### 6. 구현 중 추가 확인된 보정
+
+초기 설계 이후 실제 Paperlogy와 일부 한글 custom font를 다시 검증하면서 다음 보정이
+추가로 필요하다는 점이 확인됐다. 이 항목들은 PR 설명에도 포함한다.
+
+#### OS/2 `usWeightClass` 우선 사용
+
+custom font weight는 Qt가 반환한 style weight나 style name 추정보다 폰트 파일의
+OS/2 table `usWeightClass`를 우선한다. Paperlogy처럼 style name과 실제 OpenType
+weight가 명확한 폰트에서 Qt backend가 weight를 뭉뚱그리거나 오래된 Qt5식 weight로
+보여 줄 수 있으므로, custom font에 대해서는 파일 내부의 선언값을 source of truth로
+삼는다.
+
+단, 일부 vendor는 구형 Windows GDI 렌더링 문제를 피하기 위해 Thin/ExtraLight 계열을
+표준 `100`/`200` 대신 `250`으로 저장한다. 이런 경우 같은 family 안에서 `250` face가
+여러 개 생겨 weight picker에서 하나만 도달 가능해질 수 있다. 따라서 동일
+`usWeightClass`가 중복되고 style name만으로 `Thin`, `ExtraLight`, `Light` 등을
+명확히 구분할 수 있으면, UI/registry weight는 style name 기반의 표준값으로
+분리한다. 원래 폰트 파일 값이 잘못됐다고 보는 것이 아니라, 사용자 선택 가능성을
+보존하기 위한 runtime 보정이다.
+
+#### 손상된 Qt family 후보 제외
+
+Windows/Qt 조합에서는 한글 family가 `??? ???` 또는 공백과 `?`만 있는 문자열로
+반환되는 경우가 있다. 이런 값은 렌더링 family 후보나 alias key로 사용하지 않는다.
+name table에서 canonical/display family를 읽을 수 있으면 그 값을 우선하고, Qt가
+반환한 정상 family만 alias에 포함한다.
+
+#### face-level key 충돌 방지
+
+같은 picker family 안의 여러 face가 family alias를 공유할 수 있다. 이 alias를 그대로
+face resolve key로 등록하면 `Paperlogy`처럼 family 이름으로 resolve할 때 특정 face가
+우연히 고정되어, weight `800` 요청이 `900` face로 가는 식의 문제가 생긴다.
+
+따라서 registry index는 entry-level key와 face-level key를 분리한다. canonical,
+display, Qt family처럼 family 전체를 가리키는 key는 entry resolve에만 사용하고,
+face resolve에는 같은 entry 안에서 유일하며 entry key가 아닌 key만 등록한다. 실제
+face 선택은 요청 weight와 `FontEntry.face_for_weight()`로 결정한다.
+
 ## 제안 자료구조
 
 런타임 전용 `FontRegistry`를 둔다.
