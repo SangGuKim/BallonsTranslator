@@ -45,6 +45,8 @@ Windows를 사용하고, 직접 환경을 설정하고 싶지 않으며, 인터�
 
 이 패키지들은 Windows 7에서 실행할 수 없다. Windows 7 사용자는 [Python 3.8](https://www.python.org/downloads/release/python-3810/)을 직접 설치해 소스 코드로 실행해야 한다.
 
+Windows에서 소스 코드로 실행하면서 PyTorch나 딥러닝 모듈을 사용할 때 `msvcp140.dll`, `c10.dll`, `[WinError 1114]` 관련 오류가 발생하면 [Microsoft Visual C++ Redistributable x64](https://aka.ms/vc14/vc_redist.x64.exe)를 설치하거나 업데이트하라. Visual Studio 2015-2022 버전이며, [공식 다운로드 안내](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist)를 참고할 수 있다.
+
 ## 소스 코드 실행
 
 [Python](https://www.python.org/downloads/release/python-31011) **3.12 이하**와 [Git](https://git-scm.com/downloads)을 설치한다. Microsoft Store판 Python은 사용하지 마라.
