@@ -109,6 +109,16 @@ Qt가 `Batang`과 `바탕`을 모두 반환해도, Qt API만으로 둘의 alias 
 - `ballontranslator/utils/config.py`
 - `ballontranslator/utils/shared.py`
 
+## 후속 설계 메모
+
+- `docs/format-inspector-issues.md`: multi-select, rich text cursor/selection,
+  style preset 상태 모델 문제를 정리한다.
+- `docs/font-storage-policy-decision.md`: project JSON의 `font_family`,
+  `font_weight` 저장 정책과 desired/actual weight 분리 과제를 정리한다.
+- `docs/image-scale-project-compatibility.md`: MangaJaNai 등 외부 업스케일 후
+  기존 project 좌표와 font size가 맞지 않는 문제, 단기 변환 스크립트, 장기
+  비율 기반 좌표 모델을 정리한다.
+
 ## 하지 말아야 할 것
 
 - project JSON shape를 바로 바꾸지 않는다.

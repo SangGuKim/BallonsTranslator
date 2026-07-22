@@ -11,6 +11,7 @@ Windows/macOS/Linux에서 Qt가 실제로 어떤 폰트 정보를 주는지 비�
 - `docs/format-inspector-issues.md`: multi-select와 rich text selection format inspector 문제 정리
 - `docs/format-inspector-selection-design.md`: 글로벌 글꼴 형식, 프리셋, 다중 선택, Rich Text 선택 구간의 표시/버튼 정책
 - `docs/font-storage-policy-decision.md`: family group 저장과 face canonical 저장 정책 검토
+- `docs/image-scale-project-compatibility.md`: 업스케일 이미지와 기존 프로젝트 좌표, font size 호환성 설계
 - `data/`: 과거 분리형 optional alias/group table 예시. 런타임 설정은
   `config/font_registry.json`을 사용한다.
 - `tools/dump_font_info.py`: Qt가 주는 원본 폰트 정보와 custom font name table을 JSON으로 덤프한다.

@@ -164,6 +164,25 @@ def choose_localized(records: list[dict[str, Any]], locale: str) -> str | None:
     return choose_english(records) or (records[0]["value"] if records else None)
 
 
+def choose_localized_pair(
+    primary_records: list[dict[str, Any]],
+    fallback_records: list[dict[str, Any]],
+    locale: str,
+) -> str | None:
+    locale = locale.replace("_", "-")
+    language_prefix = locale.split("-", 1)[0]
+    for records in (primary_records, fallback_records):
+        for record in records:
+            if record.get("language") == locale and record.get("value"):
+                return record["value"]
+    for records in (primary_records, fallback_records):
+        for record in records:
+            language = str(record.get("language", ""))
+            if language.startswith(language_prefix) and record.get("value"):
+                return record["value"]
+    return choose_english(primary_records) or choose_english(fallback_records) or choose_first(primary_records) or choose_first(fallback_records)
+
+
 def choose_first(records: list[dict[str, Any]]) -> str | None:
     for record in records:
         if record.get("value"):
@@ -235,7 +254,7 @@ def build_face_candidate(
     if not canonical_family:
         return None
 
-    localized_family = choose_localized(typo_family, locale) or choose_localized(family, locale)
+    localized_family = choose_localized_pair(typo_family, family, locale)
     english_family = choose_english(typo_family) or choose_english(family)
     style_name = simplify_style(choose_english(typo_subfamily) or choose_english(subfamily) or choose_first(typo_subfamily) or choose_first(subfamily))
     display_face = choose_localized(full_name, locale) or f"{localized_family or canonical_family} {style_name}".strip()

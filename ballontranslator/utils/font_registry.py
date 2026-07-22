@@ -24,6 +24,12 @@ WINDOWS_LANGS = {
     0x0412: 'ko-KR',
     0x0804: 'zh-CN',
 }
+MAC_LANGS = {
+    23: 'ko-KR',
+}
+MAC_ENCODINGS = {
+    3: ['x-mac-korean', 'cp949', 'euc_kr'],
+}
 WEIGHT_BY_STYLE = {
     'thin': 100,
     'extralight': 200,
@@ -265,10 +271,16 @@ def _name_id_label(name_id: int) -> str:
 
 
 def _decode_name(raw: bytes, platform_id: int, encoding_id: int) -> str:
+    """Decode a TrueType/OpenType name table string.
+
+    >>> _decode_name(bytes.fromhex('b3 aa b4 ae'), 1, 3)
+    '나눔'
+    """
     encodings = []
     if platform_id in (0, 3):
         encodings.extend(['utf-16-be', 'utf-8'])
     elif platform_id == 1:
+        encodings.extend(MAC_ENCODINGS.get(encoding_id, []))
         encodings.extend(['mac_roman', 'latin-1'])
     else:
         encodings.extend(['utf-8', 'latin-1'])
@@ -282,6 +294,12 @@ def _decode_name(raw: bytes, platform_id: int, encoding_id: int) -> str:
         if text:
             return text
     return raw.decode('latin-1', errors='replace').replace('\x00', '').strip()
+
+
+def _language_label(platform_id: int, language_id: int) -> str:
+    if platform_id == 1:
+        return MAC_LANGS.get(language_id, f'0x{language_id:04x}')
+    return WINDOWS_LANGS.get(language_id, f'0x{language_id:04x}')
 
 
 def _read_u16(data: bytes, offset: int) -> int:
@@ -393,7 +411,7 @@ def parse_font_names(path: Path) -> List[Dict[str, Any]]:
                     'platform_id': platform_id,
                     'encoding_id': encoding_id,
                     'language_id': language_id,
-                    'language': WINDOWS_LANGS.get(language_id, f'0x{language_id:04x}'),
+                    'language': _language_label(platform_id, language_id),
                 }
             )
         faces.append({'face_index': face_index, 'names': names, 'os2_weight': os2_weight})
@@ -428,6 +446,33 @@ def choose_localized(records: Iterable[Dict[str, Any]], locale: str) -> Optional
         if language.startswith(language_prefix) and record.get('value'):
             return record['value']
     return choose_english(records) or choose_first(records)
+
+
+def choose_localized_pair(
+    primary_records: Iterable[Dict[str, Any]],
+    fallback_records: Iterable[Dict[str, Any]],
+    locale: str,
+) -> Optional[str]:
+    """Prefer exact-locale records before falling back to broader name IDs.
+
+    >>> choose_localized_pair([{'language': '0x0017', 'value': 'A'}], [{'language': 'ko-KR', 'value': '가'}], 'ko-KR')
+    '가'
+    """
+    primary_records = list(primary_records)
+    fallback_records = list(fallback_records)
+    locale = locale.replace('_', '-')
+    language_prefix = locale.split('-', 1)[0]
+
+    for records in (primary_records, fallback_records):
+        for record in records:
+            if record.get('language') == locale and record.get('value'):
+                return record['value']
+    for records in (primary_records, fallback_records):
+        for record in records:
+            language = str(record.get('language', ''))
+            if language.startswith(language_prefix) and record.get('value'):
+                return record['value']
+    return choose_english(primary_records) or choose_english(fallback_records) or choose_first(primary_records) or choose_first(fallback_records)
 
 
 def choose_first(records: Iterable[Dict[str, Any]]) -> Optional[str]:
@@ -516,7 +561,7 @@ def _candidate_from_parsed_face(
     postscript_name = records_by_label(parsed_face, 'postscript_name')
 
     english_family = choose_english(typo_family) or choose_english(family)
-    localized_family = choose_localized(typo_family, locale) or choose_localized(family, locale)
+    localized_family = choose_localized_pair(typo_family, family, locale)
     canonical_family = english_family or choose_first(typo_family) or choose_first(family)
     qt_family = _choose_qt_family(canonical_family, qt_families)
     if not canonical_family:

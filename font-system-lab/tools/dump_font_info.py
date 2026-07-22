@@ -35,6 +35,12 @@ WINDOWS_LANGS = {
     0x0412: "ko-KR",
     0x0804: "zh-CN",
 }
+MAC_LANGS = {
+    23: "ko-KR",
+}
+MAC_ENCODINGS = {
+    3: ["x-mac-korean", "cp949", "euc_kr"],
+}
 
 
 def _name_id_label(name_id: int) -> str:
@@ -42,10 +48,17 @@ def _name_id_label(name_id: int) -> str:
 
 
 def _decode_name(raw: bytes, platform_id: int, encoding_id: int) -> str:
+    """Decode a TrueType/OpenType name table string.
+
+    Example:
+        >>> _decode_name(bytes.fromhex("b3 aa b4 ae"), 1, 3)
+        '나눔'
+    """
     encodings = []
     if platform_id in (0, 3):
         encodings.extend(["utf-16-be", "utf-8"])
     elif platform_id == 1:
+        encodings.extend(MAC_ENCODINGS.get(encoding_id, []))
         encodings.extend(["mac_roman", "latin-1"])
     else:
         encodings.extend(["utf-8", "latin-1"])
@@ -59,6 +72,12 @@ def _decode_name(raw: bytes, platform_id: int, encoding_id: int) -> str:
         if text:
             return text
     return raw.decode("latin-1", errors="replace").replace("\x00", "").strip()
+
+
+def _language_label(platform_id: int, language_id: int) -> str:
+    if platform_id == 1:
+        return MAC_LANGS.get(language_id, f"0x{language_id:04x}")
+    return WINDOWS_LANGS.get(language_id, f"0x{language_id:04x}")
 
 
 def _read_u16(data: bytes, offset: int) -> int:
@@ -155,7 +174,7 @@ def parse_font_names(path: Path) -> list[dict[str, Any]]:
                     "platform_id": platform_id,
                     "encoding_id": encoding_id,
                     "language_id": language_id,
-                    "language": WINDOWS_LANGS.get(language_id, f"0x{language_id:04x}"),
+                    "language": _language_label(platform_id, language_id),
                 }
             )
 

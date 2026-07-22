@@ -63,6 +63,7 @@ BallonsTranslator는 딥러닝 기반 만화 번역 보조 도구이다. 텍스�
 - [font-system-lab/docs/font-registry-design-en.md](font-system-lab/docs/font-registry-design-en.md): PR 설명에 활용할 수 있는 영어 설계 초안이다.
 - [font-system-lab/docs/font-implementation-worklog.md](font-system-lab/docs/font-implementation-worklog.md): 구현 중 발견한 문제와 해결 기록이다.
 - [font-system-lab/docs/format-inspector-issues.md](font-system-lab/docs/format-inspector-issues.md): 이번 font registry 범위에서 분리한 format inspector 후속 과제이다.
+- [font-system-lab/docs/image-scale-project-compatibility.md](font-system-lab/docs/image-scale-project-compatibility.md): 업스케일 이미지와 기존 project 좌표, font size 호환성 설계이다.
 
 대표 probe 명령은 다음과 같다.
 
