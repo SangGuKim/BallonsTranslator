@@ -264,8 +264,8 @@ class TextItemEditCommand(QUndoCommand):
             self.blkitem.repaint_background()
 
         if self.is_formatting and self.blkitem == self.formatpanel.textblk_item:
-            multi_size = not self.blkitem.isEditing() and self.blkitem.isMultiFontSize()
-            self.formatpanel.set_active_format(self.blkitem.get_fontformat(), multi_size)
+            size_marker = '*' if not self.blkitem.isEditing() and self.blkitem.isMultiFontSize() else ''
+            self.formatpanel.set_active_format(self.blkitem.get_fontformat(), size_marker=size_marker)
 
         if self.edit is not None and not self.is_formatting:
             self.edit.redo()
@@ -281,8 +281,8 @@ class TextItemEditCommand(QUndoCommand):
             self.blkitem.repaint_background()
 
         if self.is_formatting and self.blkitem == self.formatpanel.textblk_item:
-            multi_size = not self.blkitem.isEditing() and self.blkitem.isMultiFontSize()
-            self.formatpanel.set_active_format(self.blkitem.get_fontformat(), multi_size)
+            size_marker = '*' if not self.blkitem.isEditing() and self.blkitem.isMultiFontSize() else ''
+            self.formatpanel.set_active_format(self.blkitem.get_fontformat(), size_marker=size_marker)
 
         if self.edit is not None:
             self.edit.undo()

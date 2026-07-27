@@ -11,12 +11,81 @@ from qtpy.QtGui import (QGradient, QKeyEvent, QFont, QTextCursor, QPixmap, QPain
 from ballontranslator.utils.textblock import TextBlock, FontFormat, TextAlignment, LineSpacingType
 from ballontranslator.utils.imgproc_utils import xywh2xyxypoly, rotate_polygons
 from ballontranslator.utils.fontformat import FontFormat, px2pt, pt2px
+from ballontranslator.utils import shared
 from .misc import td_pattern, table_pattern
 from .scene_textlayout import VerticalTextDocumentLayout, HorizontalTextDocumentLayout, SceneTextLayout
 from .text_graphical_effect import apply_shadow_effect
 
 TEXTRECT_SHOW_COLOR = QColor(30, 147, 229, 170)
 TEXTRECT_SELECTED_COLOR = QColor(248, 64, 147, 170)
+FONT_FAMILY_CSS_PATTERN = re.compile(r"(font-family\s*:\s*')([^']+)(')")
+
+
+def qfont_weight(weight: int):
+    try:
+        return QFont.Weight(int(weight))
+    except (TypeError, ValueError):
+        return int(weight)
+
+
+def qt_font_family(family: str, weight: int = None) -> str:
+    registry = getattr(shared, 'FONT_REGISTRY', None)
+    if registry is None:
+        return family
+    resolved = registry.resolve_family(family, weight)
+    return resolved.qt_family or family
+
+
+def qt_font_resolution(family: str, weight: int = None):
+    registry = getattr(shared, 'FONT_REGISTRY', None)
+    if registry is None:
+        return None
+    return registry.resolve_family(family, weight)
+
+
+def apply_resolved_font_family(font: QFont, family: str, weight: int = None):
+    resolved = qt_font_resolution(family, weight)
+    if resolved is None:
+        font.setFamily(family)
+        return
+
+    font.setFamily(resolved.qt_family or family)
+    style_name = getattr(getattr(resolved, 'face', None), 'style_name', '')
+    if style_name and hasattr(font, 'setStyleName'):
+        font.setStyleName(style_name)
+
+
+def apply_resolved_char_format_family(cfmt: QTextCharFormat, family: str, weight: int = None):
+    resolved = qt_font_resolution(family, weight)
+    if resolved is None:
+        return
+
+    cfmt.setFontFamily(resolved.qt_family or family)
+    style_name = getattr(getattr(resolved, 'face', None), 'style_name', '')
+    if style_name and hasattr(cfmt, 'setFontStyleName'):
+        cfmt.setFontStyleName(style_name)
+
+
+def family_for_weight_change(family: str, weight: int = None) -> str:
+    resolved = qt_font_resolution(family, weight)
+    if resolved is not None and resolved.entry is not None:
+        return resolved.entry.canonical_family
+    return storage_font_family(family, weight)
+
+
+def storage_font_family(family: str, weight: int = None) -> str:
+    registry = getattr(shared, 'FONT_REGISTRY', None)
+    if registry is None:
+        return family
+    resolved = registry.resolve_family(family, weight)
+    return resolved.canonical_family or family
+
+
+def normalize_rich_text_font_families(html: str) -> str:
+    return FONT_FAMILY_CSS_PATTERN.sub(
+        lambda match: match.group(1) + storage_font_family(match.group(2)) + match.group(3),
+        html,
+    )
 
 
 class TextBlkItem(QGraphicsTextItem):
@@ -36,6 +105,7 @@ class TextBlkItem(QGraphicsTextItem):
     undo_signal = Signal()
     push_undo_stack = Signal(int, bool)
     propagate_user_edited = Signal(int, str, bool)
+    cursor_format_changed = Signal(int)
 
     def __init__(self, blk: TextBlock = None, idx: int = 0, set_format=True, show_rect=False, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -528,6 +598,7 @@ class TextBlkItem(QGraphicsTextItem):
             cursor = self.textCursor()
             cursor.setPosition(hit)
             self.setTextCursor(cursor)
+        self.cursor_format_changed.emit(self.idx)
 
     def endEdit(self, keep_focus=True) -> None:
         self.end_edit.emit(self.idx)
@@ -587,6 +658,7 @@ class TextBlkItem(QGraphicsTextItem):
             self.startEdit(pos=event.pos())
         else:
             super().mouseDoubleClickEvent(event)
+            self.cursor_format_changed.emit(self.idx)
         
     def mouseMoveEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         super().mouseMoveEvent(event)  
@@ -608,6 +680,13 @@ class TextBlkItem(QGraphicsTextItem):
             if self.oldPos != self.pos():
                 self.moved.emit()
         super().mouseReleaseEvent(event)
+        if self.isEditing():
+            self.cursor_format_changed.emit(self.idx)
+
+    def keyReleaseEvent(self, event: QKeyEvent) -> None:
+        super().keyReleaseEvent(event)
+        if self.isEditing():
+            self.cursor_format_changed.emit(self.idx)
 
     def hoverMoveEvent(self, event: QGraphicsSceneHoverEvent) -> None:
         self.hover_move.emit(self.idx)
@@ -633,20 +712,25 @@ class TextBlkItem(QGraphicsTextItem):
             _, td = td_pattern.findall(html)[0]
             html = tables[0] + td + '</body></html>'
 
-        return html.replace('>\n<', '><')
+        return normalize_rich_text_font_families(html.replace('>\n<', '><'))
 
     def get_fontformat(self) -> FontFormat:
+        if not self.isEditing():
+            uniform_format = self.uniform_document_fontformat()
+            if uniform_format is not None:
+                return uniform_format
+            return self.fontformat.deepcopy()
+
         fmt = self.textCursor().charFormat()
         font = fmt.font()
         color = fmt.foreground().color()
         fontformat = self.fontformat.deepcopy()
         fontformat.frgb = [color.red(), color.green(), color.blue()]
         fontformat.font_weight = font.weight()
-        fontformat.font_family = font.family()
-        if self.isEditing():
-            fontformat.font_size = pt2px(font.pointSizeF())
-        else:
-            fontformat.font_size = self.minFontSize()
+        fontformat.font_family = storage_font_family(font.family(), fontformat.font_weight)
+        point_size = font.pointSizeF()
+        if point_size > 0:
+            fontformat.font_size = pt2px(point_size)
         fontformat.bold = font.bold()
         fontformat.underline = font.underline()
         fontformat.italic = font.italic()
@@ -658,6 +742,69 @@ class TextBlkItem(QGraphicsTextItem):
         fontformat.gradient_size = self.fontformat.gradient_size
         return fontformat
 
+    def _fontformat_from_char_format(self, fmt: QTextCharFormat) -> FontFormat:
+        font = fmt.font()
+        brush = fmt.foreground()
+        fontformat = self.fontformat.deepcopy()
+        if brush.style() != Qt.BrushStyle.NoBrush:
+            color = brush.color()
+            fontformat.frgb = [color.red(), color.green(), color.blue()]
+        fontformat.font_weight = font.weight()
+        fontformat.font_family = storage_font_family(font.family(), fontformat.font_weight)
+        point_size = font.pointSizeF()
+        if point_size > 0:
+            fontformat.font_size = pt2px(point_size)
+        fontformat.bold = font.bold()
+        fontformat.underline = font.underline()
+        fontformat.italic = font.italic()
+        return fontformat
+
+    def _fontformat_field_equal(self, key: str, left: FontFormat, right: FontFormat) -> bool:
+        if key == 'frgb':
+            left_color = tuple(int(round(float(channel))) for channel in left.frgb)
+            right_color = tuple(int(round(float(channel))) for channel in right.frgb)
+            return left_color == right_color
+        if key == 'font_weight':
+            left_weight = left.font_weight if left.font_weight is not None else (700 if left.bold else 400)
+            right_weight = right.font_weight if right.font_weight is not None else (700 if right.bold else 400)
+            return int(left_weight) == int(right_weight)
+        if key == 'bold':
+            left_weight = left.font_weight if left.font_weight is not None else (700 if left.bold else 400)
+            right_weight = right.font_weight if right.font_weight is not None else (700 if right.bold else 400)
+            return (bool(left.bold) or int(left_weight) >= 700) == (bool(right.bold) or int(right_weight) >= 700)
+        return left[key] == right[key]
+
+    def uniform_document_fontformat(self) -> FontFormat:
+        doc = self.document()
+        block = doc.firstBlock()
+        uniform_format = None
+        compare_keys = {'font_family', 'font_size', 'font_weight', 'frgb', 'bold', 'italic', 'underline'}
+        while block.isValid():
+            it = block.begin()
+            while not it.atEnd():
+                fragment = it.fragment()
+                if fragment.length() > 0:
+                    fontformat = self._fontformat_from_char_format(fragment.charFormat())
+                    if uniform_format is None:
+                        uniform_format = fontformat
+                    elif any(not self._fontformat_field_equal(key, uniform_format, fontformat) for key in compare_keys):
+                        return None
+                it += 1
+            block = block.next()
+        return uniform_format
+
+    def cursor_selects_entire_document(self) -> bool:
+        cursor = self.textCursor()
+        if not cursor.hasSelection():
+            return False
+        doc = self.document()
+        doc_cursor = QTextCursor(doc)
+        doc_cursor.select(QTextCursor.SelectionType.Document)
+        last_block = doc.lastBlock()
+        content_end = last_block.position() + last_block.length() - 1 if last_block.isValid() else doc_cursor.selectionEnd()
+        doc_end = min(doc_cursor.selectionEnd(), content_end)
+        return cursor.selectionStart() <= doc_cursor.selectionStart() and cursor.selectionEnd() >= doc_end
+
     def set_fontformat(self, ffmat: FontFormat, set_char_format=False, set_stroke_width=True, set_effect=True):
         self.repainting = True
         if self.fontformat.vertical != ffmat.vertical:
@@ -668,16 +815,18 @@ class TextBlkItem(QGraphicsTextItem):
         format = cursor.charFormat()
         font = self.document().defaultFont()
         
-        font.setFamily(ffmat.font_family)
         font.setPointSizeF(ffmat.size_pt)
         font.setHintingPreference(QFont.HintingPreference.PreferNoHinting)
         font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias | QFont.StyleStrategy.NoSubpixelAntialias)
 
         fweight = ffmat.font_weight
-        if fweight is  None:
-            fweight = font.weight()
+        if fweight is None:
+            fweight = 700 if ffmat.bold else font.weight()
             ffmat.font_weight = fweight
-        font.setBold(ffmat.bold)
+        fweight = int(fweight)
+        ffmat.bold = fweight >= 700
+        apply_resolved_font_family(font, ffmat.font_family, fweight)
+        font.setWeight(qfont_weight(fweight))
 
         self.document().setDefaultFont(font)
         format.setFont(font)
@@ -686,8 +835,7 @@ class TextBlkItem(QGraphicsTextItem):
             format.setForeground(gradient)
         else:
             format.setForeground(QColor(*ffmat.foreground_color()))
-        if not ffmat.bold:
-            format.setFontWeight(fweight)
+        format.setFontWeight(qfont_weight(fweight))
         format.setFontItalic(ffmat.italic)
         format.setFontUnderline(ffmat.underline)
         if not ffmat.vertical:
@@ -737,8 +885,9 @@ class TextBlkItem(QGraphicsTextItem):
             self.repaint_background()
 
     def updateBlkFormat(self):
-        fmt = self.get_fontformat()
-        self.blk.fontformat.merge(fmt)
+        fmt = self.uniform_document_fontformat()
+        if fmt is not None:
+            self.blk.fontformat.merge(fmt)
 
     def set_cursor_cfmt(self, cursor: QTextCursor, cfmt: QTextCharFormat, merge_char: bool = False):
         doc_is_empty = self.document().isEmpty()
@@ -804,7 +953,7 @@ class TextBlkItem(QGraphicsTextItem):
         if cursor.selectionStart() == 0 and \
             cursor.selectionEnd() == lastpos:
             font = doc.defaultFont()
-            font.setFamily(value)
+            apply_resolved_font_family(font, value, font.weight())
             doc.setDefaultFont(font)
 
         sel_start = cursor.selectionStart()
@@ -823,11 +972,8 @@ class TextBlkItem(QGraphicsTextItem):
                     cfmt = fragment.charFormat()
                     under_line = cfmt.fontUnderline()
                     cfont = cfmt.font()
-                    font = QFont(value, cfont.pointSize(), cfont.weight(), cfont.italic())
-                    font.setPointSizeF(cfont.pointSizeF())
-                    font.setBold(font.bold())
-                    font.setWordSpacing(cfont.wordSpacing())
-                    font.setLetterSpacing(cfont.letterSpacingType(), cfont.letterSpacing())
+                    font = QFont(cfont)
+                    apply_resolved_font_family(font, value, cfont.weight())
                     cfmt.setFont(font)
                     cfmt.setFontUnderline(under_line)
                     cursor.setPosition(pos1)
@@ -837,15 +983,65 @@ class TextBlkItem(QGraphicsTextItem):
             block = block.next()
 
         cfmt = cursor.charFormat()
-        cfmt.setFontFamily(value)
+        cfont = cfmt.font()
+        apply_resolved_font_family(cfont, value, cfont.weight())
+        cfmt.setFont(cfont)
         self.set_cursor_cfmt(cursor, cfmt)
 
     def setFontWeight(self, value: float, repaint_background: bool = True, set_selected: bool = False, restore_cursor: bool = False):
         cursor, after_kwargs = self._before_set_ffmt(set_selected, restore_cursor)
-        cfmt = QTextCharFormat()
-        cfmt.setFontWeight(value)
-        self.set_cursor_cfmt(cursor, cfmt, True)
+        self.layout.relayout_on_changed = False
+        self._doc_set_font_weight(value, cursor)
+        self.layout.relayout_on_changed = True
+        self.layout.reLayoutEverything()
         self._after_set_ffmt(cursor, repaint_background, restore_cursor, **after_kwargs)
+
+    def _doc_set_font_weight(self, value: float, cursor: QTextCursor):
+        doc = self.document()
+        qweight = qfont_weight(value)
+        lastpos = doc.rootFrame().lastPosition()
+        if cursor.selectionStart() == 0 and \
+            cursor.selectionEnd() == lastpos:
+            font = doc.defaultFont()
+            family = family_for_weight_change(font.family(), font.weight())
+            apply_resolved_font_family(font, family, value)
+            font.setWeight(qweight)
+            doc.setDefaultFont(font)
+
+        sel_start = cursor.selectionStart()
+        sel_end = cursor.selectionEnd()
+        block = doc.firstBlock()
+        while block.isValid():
+            it = block.begin()
+            while not it.atEnd():
+                fragment = it.fragment()
+
+                frag_start = fragment.position()
+                frag_end = frag_start + fragment.length()
+                pos2 = min(frag_end, sel_end)
+                pos1 = max(frag_start, sel_start)
+                if pos1 < pos2:
+                    cfmt = fragment.charFormat()
+                    under_line = cfmt.fontUnderline()
+                    font = QFont(cfmt.font())
+                    family = family_for_weight_change(font.family(), font.weight())
+                    apply_resolved_font_family(font, family, value)
+                    font.setWeight(qweight)
+                    cfmt.setFont(font)
+                    cfmt.setFontUnderline(under_line)
+                    cursor.setPosition(pos1)
+                    cursor.setPosition(pos2, QTextCursor.MoveMode.KeepAnchor)
+                    cursor.setCharFormat(cfmt)
+                it += 1
+            block = block.next()
+
+        cfmt = cursor.charFormat()
+        cfont = cfmt.font()
+        family = family_for_weight_change(cfont.family(), cfont.weight())
+        apply_resolved_font_family(cfont, family, value)
+        cfont.setWeight(qweight)
+        cfmt.setFont(cfont)
+        self.set_cursor_cfmt(cursor, cfmt)
 
     def setFontItalic(self, value: bool, repaint_background: bool = True, set_selected: bool = False, restore_cursor: bool = False):
         cursor, after_kwargs = self._before_set_ffmt(set_selected, restore_cursor)

@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import hashlib
 import logging
+import pickle
 import sys
 
 from typing import Tuple
@@ -88,6 +89,23 @@ def _clean_state_dict_keys(state_dict: Dict[str, torch.Tensor]) -> Dict[str, tor
         new_sd[new_k] = v
     return new_sd
 
+
+class _CachedFontPlaceholder:
+    pass
+
+
+class _FontCacheUnpickler(pickle.Unpickler):
+    def find_class(self, module: str, name: str):
+        if module == 'font_dataset.font' and name == 'DSFont':
+            return _CachedFontPlaceholder
+        return super().find_class(module, name)
+
+
+def _load_font_cache(cache_path: str):
+    with open(cache_path, 'rb') as f:
+        return _FontCacheUnpickler(f).load()
+
+
 def prepare_fonts(cache_path: str = None):
     """Load font list from cache file"""
     try:
@@ -95,20 +113,18 @@ def prepare_fonts(cache_path: str = None):
             if YUZUMARKER_DIR not in sys.path:
                 sys.path.insert(0, YUZUMARKER_DIR)
             
-            with open(cache_path, 'rb') as f:
-                import pickle
-                font_objects = pickle.load(f)
-                
-                # Convert font objects to their path strings
-                font_list = []
-                for font_obj in font_objects:
-                    if hasattr(font_obj, 'path'):
-                        font_list.append(font_obj.path)
-                    else:
-                        # Fallback: if the object doesn't have path attribute, keep the original object
-                        font_list.append(font_obj)
-                
-                return font_list
+            font_objects = _load_font_cache(cache_path)
+
+            # The cache stores font_dataset.font.DSFont objects, but detection
+            # only needs their paths to map model class indexes to font names.
+            font_list = []
+            for font_obj in font_objects:
+                if hasattr(font_obj, 'path'):
+                    font_list.append(font_obj.path)
+                else:
+                    font_list.append(font_obj)
+
+            return font_list
         else:
             pass
     except FileNotFoundError as e:

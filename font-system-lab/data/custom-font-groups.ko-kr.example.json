@@ -1,0 +1,32 @@
+{
+  "groups": [
+    {
+      "canonical": "Korail Round Gothic",
+      "display": "코레일 둥근고딕",
+      "note": "The font files declare weight-specific family names, but they can be presented as one picker family with separate weights.",
+      "members": [
+        {
+          "canonical": "Korail Round Gothic Light",
+          "display": "코레일 둥근고딕 Light",
+          "weight": 300,
+          "style": "Light",
+          "aliases": ["Korail Round Gothic L", "코레일 둥근고딕 Light"]
+        },
+        {
+          "canonical": "Korail Round Gothic Medium",
+          "display": "코레일 둥근고딕 Medium",
+          "weight": 500,
+          "style": "Medium",
+          "aliases": ["Korail Round Gothic M", "코레일 둥근고딕 Medium"]
+        },
+        {
+          "canonical": "Korail Round Gothic Bold",
+          "display": "코레일 둥근고딕 Bold",
+          "weight": 700,
+          "style": "Bold",
+          "aliases": ["Korail Round Gothic B", "코레일 둥근고딕 Bold"]
+        }
+      ]
+    }
+  ]
+}

@@ -2,11 +2,12 @@ from typing import List
 
 from qtpy.QtWidgets import QMenu, QMessageBox, QStackedLayout, QGraphicsDropShadowEffect, QLineEdit, QSizePolicy, QHBoxLayout, QVBoxLayout, QPushButton, QLabel
 from qtpy.QtCore import Signal, Qt, QRectF
-from qtpy.QtGui import QMouseEvent, QFontMetrics, QColor, QPixmap, QPainter, QContextMenuEvent
+from qtpy.QtGui import QMouseEvent, QFont, QFontMetrics, QColor, QPixmap, QPainter, QContextMenuEvent
 
 
 from ballontranslator.utils.fontformat import FontFormat
 from ballontranslator.utils.config import save_text_styles, text_styles
+from ballontranslator.utils import shared
 from ballontranslator.utils import config as C
 from .custom_widget import PanelArea, Widget, FlowLayout
 from .misc import themed_icon_url
@@ -149,7 +150,7 @@ class TextStyleLabel(Widget):
         if len(updated_keys) > 0:
             save_text_styles()
         
-        preview_keys = {'font_family', 'frgb', 'srgb', 'stroke_width'}
+        preview_keys = {'font_family', 'font_weight', 'bold', 'italic', 'frgb', 'srgb', 'stroke_width'}
         for k in updated_keys:
             if k in preview_keys:
                 self.updatePreview()
@@ -174,7 +175,24 @@ class TextStyleLabel(Widget):
 
     def updatePreview(self):
         font = self.stylelabel.font()
-        font.setFamily(self.fontfmt.font_family)
+        weight = self.fontfmt.font_weight
+        if weight is None:
+            weight = 700 if self.fontfmt.bold else 400
+        family = self.fontfmt.font_family
+        registry = getattr(shared, 'FONT_REGISTRY', None)
+        style_name = ''
+        if registry is not None:
+            resolved = registry.resolve_family(family, weight)
+            family = resolved.qt_family or family
+            style_name = getattr(getattr(resolved, 'face', None), 'style_name', '')
+        font.setFamily(family)
+        if style_name and hasattr(font, 'setStyleName'):
+            font.setStyleName(style_name)
+        try:
+            font.setWeight(QFont.Weight(int(weight)))
+        except (TypeError, ValueError):
+            font.setWeight(int(weight))
+        font.setItalic(self.fontfmt.italic)
         self.stylelabel.setFont(font)
 
         d = int(self.colorw.width() * 0.66)
@@ -378,6 +396,13 @@ class TextStylePresetPanel(PanelArea):
         textstylelabel.stylelabel_activated.connect(self.on_stylelabel_activated)
         textstylelabel.apply_fontfmt.connect(self.apply_fontfmt)
         self.flayout.insertWidget(self.count(), textstylelabel)
+
+    def setArrowButtonsEnabled(self, apply_enabled: bool, update_enabled: bool):
+        for item in self.flayout._items:
+            widget = item.widget()
+            if isinstance(widget, TextStyleLabel):
+                widget.apply_btn.setEnabled(apply_enabled)
+                widget.update_btn.setEnabled(update_enabled)
 
     def on_deletebtn_clicked(self):
         w: TextStyleLabel = self.sender()

@@ -196,6 +196,14 @@ class TextAdvancedFormatPanel(PanelArea):
     def on_linespacing_type_changed(self):
         self.on_format_changed('line_spacing_type', self.linespacing_type_combobox.currentIndex())
 
+    def _set_box_mixed(self, box):
+        box.blockSignals(True)
+        box.setCurrentText('')
+        box.blockSignals(False)
+
+    def _set_color_mixed(self, label):
+        label.setMixed(True)
+
     def set_active_format(self, font_format: FontFormat):
         self.active_format = font_format
         self.linespacing_type_combobox.setCurrentIndex(font_format.line_spacing_type)
@@ -212,3 +220,30 @@ class TextAdvancedFormatPanel(PanelArea):
         self.gradient_group.start_picker.setPickerColor(font_format.gradient_start_color)
         self.gradient_group.end_picker.setPickerColor(font_format.gradient_end_color)
         # self.tate_chu_yoko_checker.setChecked(font_format.font)
+
+    def set_mixed_fields(self, mixed_fields):
+        if 'line_spacing_type' in mixed_fields:
+            self.linespacing_type_combobox.blockSignals(True)
+            self.linespacing_type_combobox.setCurrentIndex(-1)
+            self.linespacing_type_combobox.blockSignals(False)
+        if 'opacity' in mixed_fields:
+            self._set_box_mixed(self.opacity_box)
+        if 'shadow_color' in mixed_fields:
+            self._set_color_mixed(self.shadow_group.color_label)
+        if 'shadow_strength' in mixed_fields:
+            self._set_box_mixed(self.shadow_group.strength_box)
+        if 'shadow_radius' in mixed_fields:
+            self._set_box_mixed(self.shadow_group.radius_box)
+        if 'shadow_offset' in mixed_fields:
+            self._set_box_mixed(self.shadow_group.xoffset_box)
+            self._set_box_mixed(self.shadow_group.yoffset_box)
+        if 'gradient_enabled' in mixed_fields:
+            self.gradient_group.enable_checker.setStyleSheet("QLabel { background-color: rgba(160, 160, 160, 80); border: 1px dashed rgb(120, 120, 120); }")
+        if 'gradient_start_color' in mixed_fields:
+            self._set_color_mixed(self.gradient_group.start_picker)
+        if 'gradient_end_color' in mixed_fields:
+            self._set_color_mixed(self.gradient_group.end_picker)
+        if 'gradient_angle' in mixed_fields:
+            self._set_box_mixed(self.gradient_group.angle_box)
+        if 'gradient_size' in mixed_fields:
+            self._set_box_mixed(self.gradient_group.size_box)

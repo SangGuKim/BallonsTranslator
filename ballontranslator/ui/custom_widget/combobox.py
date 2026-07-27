@@ -163,3 +163,64 @@ class SizeComboBox(QComboBox):
 
 class SmallSizeComboBox(SizeComboBox):
     pass
+
+
+class FontWeightComboBox(QComboBox):
+    """Compact font-weight picker backed by registry weights.
+
+    The widget keeps display text and stored data identical so command handlers
+    receive normalized OpenType/Qt6-style numeric weights.
+    """
+
+    param_changed = Signal(str, int)
+    STANDARD_WEIGHTS = [100, 200, 300, 400, 500, 600, 700, 800, 900]
+    POPUP_MIN_WIDTH = 70
+
+    def __init__(self, parent: QWidget = None) -> None:
+        super().__init__(parent)
+        self.setFixedWidth(58)
+        self.view().setMinimumWidth(self.POPUP_MIN_WIDTH)
+        self.currentIndexChanged.connect(self._on_index_changed)
+        self.update_weights([])
+
+    def update_weights(self, weights: List[int], selected_weight: int = None):
+        selected_weight = selected_weight if selected_weight is not None else self.current_weight()
+        weights = sorted({int(weight) for weight in weights if weight is not None}) or self.STANDARD_WEIGHTS
+
+        self.blockSignals(True)
+        self.clear()
+        for weight in weights:
+            self.addItem(str(weight), userData=weight)
+        self.blockSignals(False)
+        self.set_weight(selected_weight)
+
+    def set_weight(self, weight: int):
+        if weight is None:
+            weight = 400
+        if self.count() == 0:
+            self.update_weights(self.STANDARD_WEIGHTS, weight)
+            return
+
+        best_index = min(
+            range(self.count()),
+            key=lambda index: (abs((self.itemData(index) or 400) - weight), -(self.itemData(index) or 400)),
+        )
+        self.blockSignals(True)
+        self.setCurrentIndex(best_index)
+        self.blockSignals(False)
+
+    def current_weight(self) -> int:
+        data = self.itemData(self.currentIndex())
+        return int(data) if data is not None else 400
+
+    def _on_index_changed(self):
+        self.param_changed.emit('font_weight', self.current_weight())
+
+    def showPopup(self):
+        # macOS reserves a leading checkmark column in combo popups; keep the
+        # button compact, but give the popup enough room for three-digit weights.
+        self.view().setMinimumWidth(max(self.width(), self.POPUP_MIN_WIDTH))
+        super().showPopup()
+
+    def wheelEvent(self, event):
+        event.ignore()

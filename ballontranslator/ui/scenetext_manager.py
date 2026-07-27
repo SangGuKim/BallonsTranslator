@@ -508,6 +508,7 @@ class SceneTextManager(QObject):
         textblk_item.propagate_user_edited.connect(self.on_propagate_textitem_edit)
         textblk_item.doc_size_changed.connect(self.onTextBlkItemSizeChanged)
         textblk_item.pasted.connect(self.onBlkitemPaste)
+        textblk_item.cursor_format_changed.connect(self.on_textitem_cursor_format_changed)
         return textblk_item
 
     def deleteTextblkItemList(self, blkitem_list: List[TextBlkItem], p_widget_list: List[TransPairWidget]):
@@ -589,6 +590,10 @@ class SceneTextManager(QObject):
         self.canvas.editing_textblkitem = None
         self.textblk_item_list[blk_id].setSelected(True)
         self.txtblkShapeControl.endEditing()
+
+    def on_textitem_cursor_format_changed(self, blk_id: int):
+        if blk_id < len(self.textblk_item_list):
+            self.formatpanel.update_rich_text_cursor_format(self.textblk_item_list[blk_id])
 
     def editingTextItem(self) -> TextBlkItem:
         if self.txtblkShapeControl.isVisible() and self.canvas.editing_textblkitem is not None:
@@ -680,11 +685,11 @@ class SceneTextManager(QObject):
             if len(blkitem_list) == 1:
                 self.formatpanel.set_textblk_item(blkitem_list[0])
             else:
-                self.formatpanel.set_textblk_item(multi_select=True)
+                self.formatpanel.set_textblk_item(multi_select=True, multi_select_items=blkitem_list)
 
     def onFormatTextblks(self, fmt: FontFormat = None):
         if fmt is None:
-            fmt = self.formatpanel.global_format
+            fmt = self.formatpanel.effective_global_format()
         self.apply_fontformat(fmt)
 
     def onAutoLayoutTextblks(self):
@@ -717,7 +722,7 @@ class SceneTextManager(QObject):
             if len(textitems) == 1:
                 self.formatpanel.set_textblk_item(textitems[-1])
             else:
-                self.formatpanel.set_textblk_item(multi_select=bool(textitems))
+                self.formatpanel.set_textblk_item(multi_select=bool(textitems), multi_select_items=textitems)
 
     def layout_textblk(self, blkitem: TextBlkItem, text: str = None, mask: np.ndarray = None, bounding_rect: List = None, region_rect: List = None):
         
@@ -930,9 +935,10 @@ class SceneTextManager(QObject):
         xywh = np.copy(xyxy)
         xywh[[2, 3]] -= xywh[[0, 1]]
         block.set_lines_by_xywh(xywh)
-        block.src_is_vertical = self.formatpanel.global_format.vertical
+        global_format = self.formatpanel.effective_global_format()
+        block.src_is_vertical = global_format.vertical
         blk_item = TextBlkItem(block, len(self.textblk_item_list), set_format=False, show_rect=True)
-        blk_item.set_fontformat(self.formatpanel.global_format)
+        blk_item.set_fontformat(global_format)
         self.canvas.push_undo_command(CreateItemCommand(blk_item, self))
 
     def on_paste2selected_textitems(self):
@@ -1015,12 +1021,15 @@ class SceneTextManager(QObject):
             trans_widget_list.append(self.pairwidget_list[blk.idx].e_trans)
         if len(selected_blks) > 0:
             self.canvas.push_undo_command(ApplyFontformatCommand(selected_blks, trans_widget_list, fontformat))
-            if self.formatpanel.global_mode():
-                if id(self.formatpanel.active_text_style_format()) != id(fontformat):
-                    self.formatpanel.deactivate_style_label()
-                self.formatpanel.on_active_textstyle_label_changed()
+            if len(selected_blks) == 1:
+                self.formatpanel.set_textblk_item(selected_blks[0])
             else:
-                self.formatpanel.set_active_format(fontformat)
+                self.formatpanel.set_textblk_item(multi_select=True, multi_select_items=selected_blks)
+        elif self.formatpanel.global_mode() and self.formatpanel.active_text_style_label() is None:
+            updated_keys = self.formatpanel.global_format.merge(fontformat, compare=True)
+            if len(updated_keys) > 0:
+                self.formatpanel.set_active_format(self.formatpanel.global_format)
+                self.formatpanel.set_globalfmt_title()
 
     def on_transwidget_selection_changed(self):
         selitems = self.canvas.selected_text_items()
