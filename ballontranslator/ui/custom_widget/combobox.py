@@ -178,7 +178,7 @@ class FontWeightComboBox(QComboBox):
 
     def __init__(self, parent: QWidget = None) -> None:
         super().__init__(parent)
-        self.setFixedWidth(44)
+        self.setFixedWidth(58)
         self.view().setMinimumWidth(self.POPUP_MIN_WIDTH)
         self.currentIndexChanged.connect(self._on_index_changed)
         self.update_weights([])
