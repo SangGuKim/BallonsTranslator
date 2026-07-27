@@ -730,7 +730,7 @@ class ConfigPanel(FramelessWindow):
 
         self.let_show_only_custom_fonts, sublock = typesettingConfigPanel.addCheckBox(self.tr("Show only custom fonts"))
         self.let_show_only_custom_fonts.stateChanged.connect(self.on_show_only_custom_fonts)
-        self.let_group_font_faces, sublock = generalConfigPanel.addCheckBox(self.tr("Group font weights by family"))
+        self.let_group_font_faces, sublock = typesettingConfigPanel.addCheckBox(self.tr("Group font weights by family"))
         self.let_group_font_faces.stateChanged.connect(self.on_group_font_faces_changed)
 
         self.rst_imgformat_combobox, imsave_sublock = applicationConfigPanel.addCombobox(['PNG', 'JPG', 'WEBP', 'JXL'], self.tr('Result image format'))
