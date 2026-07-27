@@ -437,15 +437,21 @@ def choose_english(records: Iterable[Dict[str, Any]]) -> Optional[str]:
 def choose_localized(records: Iterable[Dict[str, Any]], locale: str) -> Optional[str]:
     records = list(records)
     locale = locale.replace('_', '-')
-    for record in records:
+    records_by_platform = sorted(records, key=_name_record_platform_priority)
+    for record in records_by_platform:
         if record.get('language') == locale and record.get('value'):
             return record['value']
     language_prefix = locale.split('-', 1)[0]
-    for record in records:
+    for record in records_by_platform:
         language = str(record.get('language', ''))
         if language.startswith(language_prefix) and record.get('value'):
             return record['value']
     return choose_english(records) or choose_first(records)
+
+
+def _name_record_platform_priority(record: Dict[str, Any]) -> int:
+    platform_id = record.get('platform_id')
+    return {3: 0, 0: 1, 1: 2}.get(platform_id, 3)
 
 
 def choose_localized_pair(
@@ -464,11 +470,11 @@ def choose_localized_pair(
     language_prefix = locale.split('-', 1)[0]
 
     for records in (primary_records, fallback_records):
-        for record in records:
+        for record in sorted(records, key=_name_record_platform_priority):
             if record.get('language') == locale and record.get('value'):
                 return record['value']
     for records in (primary_records, fallback_records):
-        for record in records:
+        for record in sorted(records, key=_name_record_platform_priority):
             language = str(record.get('language', ''))
             if language.startswith(language_prefix) and record.get('value'):
                 return record['value']

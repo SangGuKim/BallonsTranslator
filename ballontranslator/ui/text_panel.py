@@ -373,6 +373,7 @@ class FontFamilyComboBox(QComboBox):
     def __init__(self, emit_if_focused=True, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.setEditable(True)
+        self.view().setUniformItemSizes(True)
         self.currentIndexChanged.connect(self.on_fontfamily_changed)
         self.lineedit = lineedit = LineEdit(parent=self)
         lineedit.return_pressed.connect(self.on_return_pressed)
@@ -381,6 +382,15 @@ class FontFamilyComboBox(QComboBox):
         self.emit_if_focused = emit_if_focused
         self.return_pressed = False
         self._using_font_entries = False
+
+    def _preview_font(self, family: str) -> QFont:
+        font = QFont(self.view().font())
+        font.setFamily(family)
+        if font.pointSizeF() > 0:
+            font.setPointSizeF(font.pointSizeF() + 4)
+        elif font.pixelSize() > 0:
+            font.setPixelSize(font.pixelSize() + 5)
+        return font
         
     def apply_fontfamily(self):
         ffamily = self._current_storage_family()
@@ -395,11 +405,11 @@ class FontFamilyComboBox(QComboBox):
         for family in font_list:
             index = self.count()
             self.addItem(family)
-            self.setItemData(index, QFont(family), Qt.ItemDataRole.FontRole)
+            self.setItemData(index, self._preview_font(family), Qt.ItemDataRole.FontRole)
         if current_font and current_font not in set(font_list):
             index = self.count()
             self.addItem(current_font)
-            self.setItemData(index, QFont(current_font), Qt.ItemDataRole.FontRole)
+            self.setItemData(index, self._preview_font(current_font), Qt.ItemDataRole.FontRole)
         self.setCurrentText(current_font)
         self.currentIndexChanged.connect(self.on_fontfamily_changed)
 
@@ -418,7 +428,7 @@ class FontFamilyComboBox(QComboBox):
         for entry in entries:
             index = self.count()
             self.addItem(entry.display_family, entry)
-            preview_font = QFont(entry.qt_family)
+            preview_font = self._preview_font(entry.qt_family)
             if len(entry.weights) == 1:
                 try:
                     preview_font.setWeight(QFont.Weight(int(entry.weights[0])))
