@@ -391,8 +391,8 @@ SizeComboBox {
 }
 
 SizeComboBox#CompactFormatComboBox {
-    min-width: 46px;
-    max-width: 46px;
+    min-width: 48px;
+    max-width: 48px;
 }
 
 SizeComboBox::hover {

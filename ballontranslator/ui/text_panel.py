@@ -184,6 +184,8 @@ class AlignmentBtnGroup(QFrame):
         hlayout.addWidget(self.alignCenterChecker)
         hlayout.addWidget(self.alignRightChecker)
         hlayout.setSpacing(0)
+        margins = hlayout.contentsMargins()
+        hlayout.setContentsMargins(margins.left(), margins.top(), 0, margins.bottom())
 
     def _checkers(self):
         return [self.alignLeftChecker, self.alignCenterChecker, self.alignRightChecker]
@@ -527,7 +529,7 @@ class FontFormatPanel(Widget):
         self.lineSpacingBox.setObjectName("CompactFormatComboBox")
         self.lineSpacingBox.addItems(["1.0", "1.1", "1.2"])
         self.lineSpacingBox.setToolTip(self.tr("Change line spacing"))
-        self.lineSpacingBox.setFixedWidth(46)
+        self.lineSpacingBox.setFixedWidth(48)
         self.lineSpacingBox.param_changed.connect(self.on_param_changed)
 
         linesp_hlayout = QHBoxLayout()
@@ -555,7 +557,7 @@ class FontFormatPanel(Widget):
         self.strokeWidthBox.setObjectName("CompactFormatComboBox")
         self.strokeWidthBox.addItems(["0.1"])
         self.strokeWidthBox.setToolTip(self.tr("Change stroke width"))
-        self.strokeWidthBox.setFixedWidth(46)
+        self.strokeWidthBox.setFixedWidth(48)
         self.strokeWidthBox.param_changed.connect(self.on_param_changed)
 
         self.fontStrokeLabel = SizeControlLabel(self, 0, self.tr("Stroke"))
@@ -581,7 +583,7 @@ class FontFormatPanel(Widget):
         self.letterSpacingBox.setObjectName("CompactFormatComboBox")
         self.letterSpacingBox.addItems(["0.0"])
         self.letterSpacingBox.setToolTip(self.tr("Change letter spacing"))
-        self.letterSpacingBox.setFixedWidth(46)
+        self.letterSpacingBox.setFixedWidth(48)
         self.letterSpacingBox.param_changed.connect(self.on_param_changed)
 
         self.letterSpacingLabel = SizeControlLabel(self, direction=0, transparent_bg=False)
@@ -598,7 +600,7 @@ class FontFormatPanel(Widget):
         self.angleBox.setObjectName("CompactFormatComboBox")
         self.angleBox.addItems(["0", "90", "180", "-90"])
         self.angleBox.setToolTip(self.tr("Angle"))
-        self.angleBox.setFixedWidth(46)
+        self.angleBox.setFixedWidth(48)
         self.angleBox.param_changed.connect(self.on_param_changed)
 
         self.angleLabel = SizeControlLabel(self, direction=0, transparent_bg=False)
