@@ -390,6 +390,11 @@ SizeComboBox {
     border-color: @borderColor;
 }
 
+SizeComboBox#CompactFormatComboBox {
+    min-width: 46px;
+    max-width: 46px;
+}
+
 SizeComboBox::hover {
     border: 1px solid rgb(30, 147, 229);
 }
