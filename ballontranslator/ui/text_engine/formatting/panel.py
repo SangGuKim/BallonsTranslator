@@ -27,6 +27,7 @@ from ...custom_widget import (
     CheckableLabel,
     ColorPickerLabel,
     FontWeightComboBox,
+    NestedColorPickerLabel,
     QFontChecker,
     SizeComboBox,
     SizeControlLabel,
@@ -570,7 +571,13 @@ class FontFormatPanel(Widget):
         linesp_hlayout.addWidget(self.lineSpacingBox)
         linesp_hlayout.setSpacing(shared.WIDGET_SPACING_CLOSE)
         
-        self.colorPicker = ColorPickerLabel(self, param_name='frgb')
+        # One nested swatch: the outer rectangle is the stroke color, the inner
+        # square is the font color. Qt routes clicks to whichever of the two the
+        # cursor is over, so both keep the plain ColorPickerLabel behaviour.
+        self.strokeColorPicker = NestedColorPickerLabel(
+            self, param_name='srgb', inner_param_name='frgb'
+        )
+        self.colorPicker = self.strokeColorPicker.inner
         self.colorPicker.setToolTip(self.tr("Change font color"))
         self.colorPicker.changingColor.connect(self.changingColor)
         self.colorPicker.colorChanged.connect(self.onColorLabelChanged)
@@ -601,7 +608,6 @@ class FontFormatPanel(Widget):
         self.fontStrokeLabel.size_ctrl_changed.connect(self.strokeWidthBox.changeByDelta)
         self.fontStrokeLabel.btn_released.connect(lambda : self.on_param_changed('stroke_width', self.strokeWidthBox.value()))
         
-        self.strokeColorPicker = ColorPickerLabel(self, param_name='srgb')
         self.strokeColorPicker.setToolTip(self.tr("Change stroke color"))
         self.strokeColorPicker.changingColor.connect(self.changingColor)
         self.strokeColorPicker.colorChanged.connect(self.onColorLabelChanged)
@@ -706,7 +712,6 @@ class FontFormatPanel(Widget):
         hl1.setContentsMargins(0, 12, 0, 0)
         hl2 = QHBoxLayout()
         hl2.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        hl2.addWidget(self.colorPicker)
         hl2.addWidget(self.strokeColorPicker)
         hl2.addWidget(self.alignBtnGroup)
         hl2.addWidget(self.formatBtnGroup)

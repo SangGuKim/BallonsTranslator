@@ -1096,6 +1096,30 @@ SmallColorPickerLabel {
     border: 1px solid @borderColor;
 }
 
+/* Stroke color: the wide outer swatch. Kept rectangular so the margin around
+   the nested font-color square stays comfortably clickable. */
+#NestedStrokeColorPicker {
+    min-width: 44px;
+    max-width: 44px;
+    min-height: 25px;
+    max-height: 25px;
+    border: 2px solid @borderColor;
+}
+
+/* Font color: the square nested inside the stroke swatch. It carries its own
+   border so the two stay distinguishable even when set to the same color. */
+#NestedFillColorPicker {
+    min-width: 14px;
+    max-width: 14px;
+    min-height: 14px;
+    max-height: 14px;
+    border: 1px solid @borderColor;
+}
+
+#NestedFillColorPicker::hover {
+    border: 1px solid rgb(30, 147, 229);
+}
+
 AlignmentChecker {
     margin: 0px;
 }

@@ -132,6 +132,49 @@ class SmallColorPickerLabel(ColorPickerLabel):
     pass
 
 
+class NestedColorPickerLabel(ColorPickerLabel):
+    '''
+    Stroke color swatch that hosts the fill color swatch inside it, so the
+    outline/fill pair reads as one glyph instead of two unlabelled squares.
+
+    The inner swatch is a child widget, which means Qt routes a click on it to
+    the inner picker and a click on the surrounding margin to this one. No
+    manual hit testing is involved, and both swatches keep the plain
+    ColorPickerLabel API their signal handlers already rely on.
+    '''
+
+    # Fraction of the leftover horizontal space placed left of the inner
+    # swatch. Below 0.5 so the inner square sits off-centre towards the left,
+    # which keeps the outer swatch clickable on the wider right side.
+    INNER_LEFT_RATIO = 0.28
+
+    def __init__(self, parent=None, param_name='', inner_param_name='', *args, **kwargs):
+        super().__init__(parent=parent, param_name=param_name, *args, **kwargs)
+        self.setObjectName('NestedStrokeColorPicker')
+        self.inner = ColorPickerLabel(self, param_name=inner_param_name)
+        self.inner.setObjectName('NestedFillColorPicker')
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._layout_inner()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._layout_inner()
+
+    def _layout_inner(self):
+        content = self.contentsRect()
+        # The stylesheet pins the inner swatch with equal min/max, so prefer the
+        # resolved minimum and only fall back before the style is polished.
+        hint = self.inner.sizeHint()
+        w = self.inner.minimumWidth() or hint.width()
+        h = self.inner.minimumHeight() or hint.height()
+        x = content.left() + round(max(0, content.width() - w) * self.INNER_LEFT_RATIO)
+        y = content.top() + round(max(0, content.height() - h) / 2)
+        self.inner.setGeometry(x, y, w, h)
+        self.inner.raise_()
+
+
 
 class ClickableLabel(QLabel):
 
