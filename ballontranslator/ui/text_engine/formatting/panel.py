@@ -910,7 +910,13 @@ class FontFormatPanel(Widget):
     def onAngleCtrlChanged(self, delta: int):
         self.angleBox.setValue(round(self.angleBox.value()) + delta)
 
-    def set_active_format(self, font_format: FontFormat, size_marker=''):
+    def set_active_format(
+        self,
+        font_format: FontFormat,
+        size_marker: str = '',
+        *,
+        update_transform_panel: bool = True,
+    ) -> None:
         C.active_format = font_format
         self.familybox.blockSignals(True)
         font_size = round(font_format.font_size, 1)
@@ -942,7 +948,8 @@ class FontFormatPanel(Widget):
         
         self.familybox.blockSignals(False)
         self.textadvancedfmt_panel.set_active_format(font_format)
-        self.texttransform_panel.set_active_format(font_format)
+        if update_transform_panel:
+            self.texttransform_panel.set_active_format(font_format)
 
     def set_mixed_fields(self, mixed_fields):
         self.mixed_fields = set(mixed_fields)
@@ -1162,21 +1169,34 @@ class FontFormatPanel(Widget):
                         self.textblk_item.fontformat = copy.deepcopy(C.active_format)
                 self.textblk_item = None
                 self.textblk_items = []
+                # The transform panel is refreshed below via set_transform_items
+                # whenever there are targets; skip the redundant update here.
+                update_transform_panel = not transform_items
                 if multi_select:
                     self.textblk_items = list(multi_select_items or [])
                     aggregate_format, mixed_fields = self.aggregate_textblk_formats(self.textblk_items)
                     size_marker = '+' if 'font_size' in mixed_fields else ''
-                    self.set_active_format(aggregate_format, size_marker=size_marker)
+                    self.set_active_format(
+                        aggregate_format,
+                        size_marker=size_marker,
+                        update_transform_panel=update_transform_panel,
+                    )
                     self.set_mixed_fields(mixed_fields)
                     self.set_formatpanel_title(self.multi_textblocks_title(self.textblk_items))
                     self.update_text_style_arrow_buttons(has_text_selection=True, mixed_selection=bool(mixed_fields))
                 elif self.active_text_style_label() is not None:
-                    self.set_active_format(self.active_text_style_format())
+                    self.set_active_format(
+                        self.active_text_style_format(),
+                        update_transform_panel=update_transform_panel,
+                    )
                     self.set_mixed_fields(set())
                     self.set_globalfmt_title()
                     self.update_text_style_arrow_buttons()
                 else:
-                    self.set_active_format(self.global_format)
+                    self.set_active_format(
+                        self.global_format,
+                        update_transform_panel=update_transform_panel,
+                    )
                     self.set_mixed_fields(set())
                     self.set_globalfmt_title()
                     self.update_text_style_arrow_buttons()
@@ -1196,7 +1216,11 @@ class FontFormatPanel(Widget):
                 self.textblk_item = textblk_item
                 self.textblk_items = []
                 size_marker = '*' if not textblk_item.isEditing() and textblk_item.isMultiFontSize() else ''
-                self.set_active_format(blk_fmt, size_marker=size_marker)
+                self.set_active_format(
+                    blk_fmt,
+                    size_marker=size_marker,
+                    update_transform_panel=not transform_items,
+                )
                 self.set_mixed_fields(set())
                 self.texttransform_panel.set_transform_items(transform_items)
                 self.set_formatpanel_title(f'TextBlock #{textblk_item.idx}')
