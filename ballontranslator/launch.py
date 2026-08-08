@@ -70,6 +70,8 @@ disable_bundled_windows_user_site()
 import ballontranslator.utils.shared as shared # Earlier import of shared to use default for config_path argument
 from ballontranslator.utils.version import APP_VERSION
 
+os.environ['NUMBA_CACHE_DIR'] = osp.join(shared.cache_dir, 'numba')
+
 PATH_ROOT = Path(shared.PROGRAM_PATH)
 PATH_FONTS = str(PATH_ROOT / 'fonts')
 PATH_FONT_REGISTRY_CONFIG = PATH_ROOT / 'resources' / 'font_registry.json'

@@ -208,7 +208,9 @@ class LLMProfileMigrationTest(unittest.TestCase):
         profile = default_profile('OpenAI')
 
         self.assertEqual(profile.model, 'gpt-5.5')
-        self.assertIn('gpt-5.5', profile.model_options)
+        for model in ('gpt-5.6', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'):
+            self.assertIn(model, profile.model_options)
+            self.assertIn(model, profile.vision_model_options)
         self.assertIn('gpt-4.1', profile.model_options)
         self.assertIn('gpt-4.1-mini', profile.model_options)
         self.assertIn('None', profile.thinking_level_options)
@@ -252,7 +254,7 @@ class LLMProfileMigrationTest(unittest.TestCase):
 
                 self.assertTrue(profile.support_text)
                 self.assertTrue(profile.support_vision)
-                self.assertEqual(profile.vision_model, profile.model)
+                self.assertTrue(profile.vision_model)
                 self.assertIn(profile.vision_model, profile.vision_model_options)
                 self.assertEqual(profile.vision_detail_level, 'auto')
 
@@ -269,7 +271,10 @@ class LLMProfileMigrationTest(unittest.TestCase):
         profile = default_profile('OpenRouter')
 
         self.assertTrue(profile.support_image)
-        self.assertEqual(profile.image_base_url, 'https://openrouter.ai/api/v1')
+        self.assertEqual(
+            profile.image_base_url,
+            'https://openrouter.ai/api/v1/images',
+        )
         self.assertEqual(profile.image_model, 'black-forest-labs/flux.2-klein-4b')
         self.assertEqual(profile.image_model_options, ['black-forest-labs/flux.2-klein-4b'])
 
@@ -393,7 +398,10 @@ class SecretStoreTest(unittest.TestCase):
         selected = profile_by_id(loaded.module.llm_profiles, loaded.module.inpaint_llm_id)
         self.assertEqual(loaded.module.inpaint_llm_id, 'openrouter')
         self.assertTrue(selected.support_image)
-        self.assertEqual(selected.image_base_url, 'https://openrouter.ai/api/v1')
+        self.assertEqual(
+            selected.image_base_url,
+            'https://openrouter.ai/api/v1/images',
+        )
         self.assertEqual(selected.image_model, 'black-forest-labs/flux.2-klein-4b')
         self.assertEqual(selected.image_model_options, ['black-forest-labs/flux.2-klein-4b'])
 

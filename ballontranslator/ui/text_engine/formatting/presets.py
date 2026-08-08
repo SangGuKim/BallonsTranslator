@@ -9,8 +9,8 @@ from ballontranslator.utils.fontformat import FontFormat
 from ballontranslator.utils.config import save_text_styles, text_styles
 from ballontranslator.utils import shared
 from ballontranslator.utils import config as C
-from .custom_widget import PanelArea, Widget, FlowLayout
-from .misc import themed_icon_url
+from ...custom_widget import PanelArea, Widget, FlowLayout
+from ...misc import themed_icon_url
 
 
 class ArrowLeftButton(QPushButton):
