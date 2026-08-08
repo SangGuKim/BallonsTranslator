@@ -57,6 +57,19 @@ class ColorPickerLabel(QLabel):
         self.param_name = param_name
         self.mixed = False
 
+    def _style_selector(self) -> str:
+        '''
+        Scope for this widget's own stylesheet. A selector-less rule such as
+        "background-color: black" cascades into every descendant *and* into the
+        QToolTip Qt spawns for the widget, which would repaint the tooltip in
+        the swatch colour and hide its text.
+        '''
+        name = self.objectName()
+        return f'#{name}' if name else type(self).__name__
+
+    def _set_background(self, css_color: str):
+        self.setStyleSheet(f'{self._style_selector()} {{ background-color: {css_color}; }}')
+
     def mousePressEvent(self, event: QMouseEvent):
         btn = event.button()
         if btn == Qt.MouseButton.LeftButton:
@@ -104,7 +117,7 @@ class ColorPickerLabel(QLabel):
             painter.end()
             self.setPixmap(pixmap)
             self.setScaledContents(True)
-            self.setStyleSheet("background-color: white;")
+            self._set_background('white')
 
     def setPickerColor(self, color: Union[QColor, List, Tuple]):
         self.mixed = False
@@ -116,8 +129,7 @@ class ColorPickerLabel(QLabel):
             color = QColor(*color)
         self.color = color
         r, g, b, a = color.getRgb()
-        rgba = f'rgba({r}, {g}, {b}, {a})'
-        self.setStyleSheet("background-color: " + rgba)
+        self._set_background(f'rgba({r}, {g}, {b}, {a})')
 
     def rgb(self) -> List:
         color = self.color
@@ -144,9 +156,9 @@ class NestedColorPickerLabel(ColorPickerLabel):
     '''
 
     # Fraction of the leftover horizontal space placed left of the inner
-    # swatch. Below 0.5 so the inner square sits off-centre towards the left,
-    # which keeps the outer swatch clickable on the wider right side.
-    INNER_LEFT_RATIO = 0.28
+    # swatch. Both swatches are square, so 0.5 centres it; drop it below 0.5 to
+    # bias the inner square towards the left.
+    INNER_LEFT_RATIO = 0.5
 
     def __init__(self, parent=None, param_name='', inner_param_name='', *args, **kwargs):
         super().__init__(parent=parent, param_name=param_name, *args, **kwargs)

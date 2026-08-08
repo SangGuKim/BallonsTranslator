@@ -1096,14 +1096,20 @@ SmallColorPickerLabel {
     border: 1px solid @borderColor;
 }
 
-/* Stroke color: the wide outer swatch. Kept rectangular so the margin around
-   the nested font-color square stays comfortably clickable. */
+/* Stroke color: the outer swatch, a touch larger than a plain picker so the
+   margin around the nested font-color square stays comfortably clickable. */
 #NestedStrokeColorPicker {
-    min-width: 44px;
-    max-width: 44px;
-    min-height: 25px;
-    max-height: 25px;
+    min-width: 30px;
+    max-width: 30px;
+    min-height: 30px;
+    max-height: 30px;
     border: 2px solid @borderColor;
+}
+
+/* The ID rule above outranks ColorPickerLabel::hover, so the outer swatch
+   needs its own hover rule or it never highlights. */
+#NestedStrokeColorPicker::hover {
+    border: 2px solid rgb(30, 147, 229);
 }
 
 /* Font color: the square nested inside the stroke swatch. It carries its own
