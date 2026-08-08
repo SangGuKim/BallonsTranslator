@@ -1112,6 +1112,13 @@ SmallColorPickerLabel {
     border: 2px solid rgb(30, 147, 229);
 }
 
+/* While the cursor is over the nested square, only that square highlights.
+   Qt would otherwise keep this parent hovered too and both borders would turn
+   blue, reading as if both colors were selected at once. */
+#NestedStrokeColorPicker[innerHover="true"]::hover {
+    border: 2px solid @borderColor;
+}
+
 /* Font color: the square nested inside the stroke swatch. It carries its own
    border so the two stay distinguishable even when set to the same color. */
 #NestedFillColorPicker {

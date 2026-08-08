@@ -2,7 +2,7 @@ from typing import List, Union, Tuple
 
 import numpy as np
 from qtpy.QtWidgets import QGraphicsOpacityEffect, QLabel, QColorDialog, QMenu
-from qtpy.QtCore import  Qt, QPropertyAnimation, QEasingCurve, Signal
+from qtpy.QtCore import  Qt, QEvent, QPropertyAnimation, QEasingCurve, Signal
 from qtpy.QtGui import QMouseEvent, QWheelEvent, QColor, QPixmap, QPainter
 
 
@@ -165,6 +165,29 @@ class NestedColorPickerLabel(ColorPickerLabel):
         self.setObjectName('NestedStrokeColorPicker')
         self.inner = ColorPickerLabel(self, param_name=inner_param_name)
         self.inner.setObjectName('NestedFillColorPicker')
+        self.setProperty('innerHover', False)
+        self.inner.installEventFilter(self)
+
+    def eventFilter(self, watched, event):
+        # Qt keeps a parent in the :hover state while the cursor is over one of
+        # its children, so hovering the inner square would light up both borders
+        # and read as if both swatches were selected. Track the inner swatch and
+        # let the stylesheet drop this one's highlight while it is hovered.
+        if watched is self.inner:
+            etype = event.type()
+            if etype == QEvent.Type.Enter:
+                self._set_inner_hover(True)
+            elif etype == QEvent.Type.Leave:
+                self._set_inner_hover(False)
+        return super().eventFilter(watched, event)
+
+    def _set_inner_hover(self, hovering: bool):
+        if bool(self.property('innerHover')) == hovering:
+            return
+        self.setProperty('innerHover', hovering)
+        # A dynamic property only reaches the stylesheet after a re-polish.
+        self.style().unpolish(self)
+        self.style().polish(self)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
