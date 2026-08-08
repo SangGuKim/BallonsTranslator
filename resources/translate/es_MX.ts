@@ -294,6 +294,11 @@
         <source>Shortcut</source>
         <translation>Acceso directo</translation>
     </message>
+    <message>
+        <location filename="../../ballontranslator/ui/configpanel.py" line="733"/>
+        <source>Group font weights by family</source>
+        <translation>Agrupar grosores por familia</translation>
+    </message>
 </context>
 <context>
     <name>DrawingPanel</name>
@@ -392,6 +397,21 @@
         <location filename="../ui/text_panel.py" line="371"/>
         <source>Translation</source>
         <translation>Traducción</translation>
+    </message>
+    <message>
+        <location filename="../../ballontranslator/ui/text_engine/formatting/panel.py" line="553"/>
+        <source>Font Weight</source>
+        <translation>Grosor de fuente</translation>
+    </message>
+    <message>
+        <location filename="../../ballontranslator/ui/text_engine/formatting/panel.py" line="1238"/>
+        <source>Text Blocks</source>
+        <translation>Bloques de texto</translation>
+    </message>
+    <message>
+        <location filename="../../ballontranslator/ui/text_engine/formatting/panel.py" line="1240"/>
+        <source>Text Blocks {indexes}</source>
+        <translation>Bloques de texto {indexes}</translation>
     </message>
 </context>
 <context>

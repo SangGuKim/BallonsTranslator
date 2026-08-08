@@ -446,6 +446,11 @@
         <source>font &amp; stroke color</source>
         <translation type="vanished">цвет шрифта и границ</translation>
     </message>
+    <message>
+        <location filename="../../ballontranslator/ui/configpanel.py" line="733"/>
+        <source>Group font weights by family</source>
+        <translation>Группировать начертания по семейству</translation>
+    </message>
 </context>
 <context>
     <name>DrawingPanel</name>
@@ -560,6 +565,21 @@
     <message>
         <source>line spacing: </source>
         <translation type="vanished">行间距: </translation>
+    </message>
+    <message>
+        <location filename="../../ballontranslator/ui/text_engine/formatting/panel.py" line="553"/>
+        <source>Font Weight</source>
+        <translation>Насыщенность шрифта</translation>
+    </message>
+    <message>
+        <location filename="../../ballontranslator/ui/text_engine/formatting/panel.py" line="1238"/>
+        <source>Text Blocks</source>
+        <translation>Текстовые блоки</translation>
+    </message>
+    <message>
+        <location filename="../../ballontranslator/ui/text_engine/formatting/panel.py" line="1240"/>
+        <source>Text Blocks {indexes}</source>
+        <translation>Текстовые блоки {indexes}</translation>
     </message>
 </context>
 <context>

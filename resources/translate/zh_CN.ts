@@ -616,6 +616,11 @@
         <source>Max spelling difference in letters. Higher values search deeper but perform slower.</source>
         <translation type="vanished">允许的最大拼写错误字符数。数值越大匹配范围越广，但搜索速度越慢。</translation>
     </message>
+    <message>
+        <location filename="../../ballontranslator/ui/configpanel.py" line="733"/>
+        <source>Group font weights by family</source>
+        <translation>按字体族归组字重</translation>
+    </message>
 </context>
 <context>
     <name>DialogCloseButton</name>
@@ -770,6 +775,21 @@
     <message>
         <source>Effect</source>
         <translation type="vanished">特效</translation>
+    </message>
+    <message>
+        <location filename="../../ballontranslator/ui/text_engine/formatting/panel.py" line="553"/>
+        <source>Font Weight</source>
+        <translation>字重</translation>
+    </message>
+    <message>
+        <location filename="../../ballontranslator/ui/text_engine/formatting/panel.py" line="1238"/>
+        <source>Text Blocks</source>
+        <translation>文本块</translation>
+    </message>
+    <message>
+        <location filename="../../ballontranslator/ui/text_engine/formatting/panel.py" line="1240"/>
+        <source>Text Blocks {indexes}</source>
+        <translation>文本块 {indexes}</translation>
     </message>
 </context>
 <context>

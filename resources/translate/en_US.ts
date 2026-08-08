@@ -349,6 +349,11 @@
         <source>Intermediate image format</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <location filename="../../ballontranslator/ui/configpanel.py" line="733"/>
+        <source>Group font weights by family</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>DrawingPanel</name>
@@ -446,6 +451,21 @@
     <message>
         <location filename="../../ballontranslator/ui/text_panel.py" line="371"/>
         <source>Translation</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../ballontranslator/ui/text_engine/formatting/panel.py" line="553"/>
+        <source>Font Weight</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../ballontranslator/ui/text_engine/formatting/panel.py" line="1238"/>
+        <source>Text Blocks</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../ballontranslator/ui/text_engine/formatting/panel.py" line="1240"/>
+        <source>Text Blocks {indexes}</source>
         <translation type="unfinished"></translation>
     </message>
 </context>

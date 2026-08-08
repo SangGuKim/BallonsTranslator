@@ -304,6 +304,11 @@
         <source>Show only custom fonts</source>
         <translation>커스텀 폰트만 표시</translation>
     </message>
+    <message>
+        <location filename="../../ballontranslator/ui/configpanel.py" line="733"/>
+        <source>Group font weights by family</source>
+        <translation>글꼴 계열별로 굵기 묶기</translation>
+    </message>
 </context>
 <context>
     <name>DrawingPanel</name>
@@ -407,6 +412,21 @@
         <location filename="../ui/text_panel.py" line="401"/>
         <source>Translation</source>
         <translation>번역</translation>
+    </message>
+    <message>
+        <location filename="../../ballontranslator/ui/text_engine/formatting/panel.py" line="553"/>
+        <source>Font Weight</source>
+        <translation>글꼴 굵기</translation>
+    </message>
+    <message>
+        <location filename="../../ballontranslator/ui/text_engine/formatting/panel.py" line="1238"/>
+        <source>Text Blocks</source>
+        <translation>텍스트 블록</translation>
+    </message>
+    <message>
+        <location filename="../../ballontranslator/ui/text_engine/formatting/panel.py" line="1240"/>
+        <source>Text Blocks {indexes}</source>
+        <translation>텍스트 블록 {indexes}</translation>
     </message>
 </context>
 <context>

@@ -1235,6 +1235,7 @@ class FontFormatPanel(Widget):
 
     def multi_textblocks_title(self, textblk_items: List[TextBlkItem] = None):
         if not textblk_items:
-            return 'Text Blocks'
-        title = 'Text Blocks ' + ', '.join(f'#{item.idx}' for item in textblk_items)
+            return self.tr('Text Blocks')
+        indexes = ', '.join(f'#{item.idx}' for item in textblk_items)
+        title = self.tr('Text Blocks {indexes}').format(indexes=indexes)
         return self.textstyle_panel.elidedText(title)
