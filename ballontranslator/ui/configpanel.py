@@ -1,17 +1,19 @@
 import os
-from typing import List, Union, Tuple
+from typing import List, Optional, Union, Tuple
 
 from qtpy.QtWidgets import (
     QApplication, QPushButton, QLayout, QGridLayout, QHBoxLayout, QVBoxLayout,
     QTreeView, QWidget, QLabel, QSizePolicy, QSpacerItem, QCheckBox,
     QSplitter, QScrollArea, QLineEdit, QStackedWidget, QMessageBox,
     QListWidget, QSpinBox, QProgressDialog, QFileDialog, QListWidgetItem,
+    QDialog, QAbstractItemView,
     QFrame,
 )
-from qtpy.QtCore import Qt, Signal, QSize, QEvent, QItemSelection, QTimer
+from qtpy.QtCore import Qt, Signal, QSize, QItemSelection, QTimer
 from qtpy.QtGui import QStandardItem, QStandardItemModel, QMouseEvent, QFont, QIntValidator, QValidator, QFocusEvent
 
-from .custom_widget import ConfigComboBox, ScrollBar, Widget
+from .custom_widget import ConfigComboBox, NoBorderPushBtn, ScrollBar, Widget
+from ballontranslator.utils import shared
 from ballontranslator.utils.config import pcfg
 from ballontranslator.utils.version import APP_VERSION
 from ballontranslator.utils.network_mirrors import (
@@ -27,18 +29,22 @@ from ballontranslator.utils.shared import (
     CONFIG_COMBOBOX_SHORT,
     CONFIG_CONTENT_MARGIN,
     CONFIG_CONTENT_MARGINS,
-    CONFIG_CONTENT_ROW_SPACING,
     CONFIG_FONTSIZE_CONTENT,
     CONFIG_FONTSIZE_TABLE,
+    LEGACY_FONTS,
     ON_MACOS,
     ON_WINDOWS,
     PROGRAM_PATH,
     TITLEBAR_HEIGHT,
 )
 from ballontranslator.utils.logger import logger as LOGGER
-from .module_parse_widgets import InpaintConfigPanel, TextDetectConfigPanel, TranslatorConfigPanel, OCRConfigPanel
+from ballontranslator.modules.lazy_registry import probe_torch_package
 from .llm_profile_widgets import LLMProfilesWidget
-from .framelesswindow import FramelessMoveResize, FramelessWindow
+from .framelesswindow import (
+    DialogCloseButton,
+    FramelessWindow,
+    OutsideClickFramelessMixin,
+)
 from ballontranslator.ui.spellcheck import DICTIONARY_URLS, SpellCheckManager, DictionaryManagerDialog, DictDownloadThread
 
 
@@ -48,17 +54,15 @@ SECTION_ALIASES = {
     'startup': 'application',
     'save': 'application',
     'modules': 'pipeline',
-    'detector': 'pipeline',
-    'ocr': 'pipeline',
-    'inpainter': 'pipeline',
-    'translator': 'pipeline',
 }
 PRESERVE_ACTIVE_WIDGET_CLASS_NAMES = {
+    'FontExcludeDialog',
     'FrameLessMessageBox',
     'ImgtransProgressMessageBox',
     'KeywordSubWidget',
     'MessageBox',
     'ProgressMessageBox',
+    'TorchInstallHelperDialog',
 }
 
 class CustomIntValidator(QIntValidator):
@@ -130,6 +134,243 @@ class ConfigTextLabel(QLabel):
         self.setFont(font)
         self.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
         self.setOpenExternalLinks(True)
+
+
+class FontExcludeDialog(OutsideClickFramelessMixin, QDialog):
+    """Dialog for selecting which fonts to exclude from the font list."""
+
+    def __init__(self, parent: QWidget = None) -> None:
+        window_type = getattr(Qt, 'WindowType', Qt)
+        super().__init__(
+            parent,
+            window_type.Dialog | window_type.FramelessWindowHint,
+        )
+        self.setObjectName('FontExcludeDialog')
+        self.setWindowTitle(self.tr("Font Exclusion"))
+        self.setWindowModality(Qt.WindowModality.NonModal)
+        self.setMinimumSize(640, 440)
+        self.resize(760, 540)
+        widget_attribute = getattr(Qt, 'WidgetAttribute', Qt)
+        self.setAttribute(widget_attribute.WA_TranslucentBackground)
+        self.setAttribute(widget_attribute.WA_DeleteOnClose)
+
+        root_layout = QVBoxLayout(self)
+        root_layout.setContentsMargins(5, 5, 5, 5)
+
+        surface = QFrame(self)
+        surface.setObjectName('FontExcludeSurface')
+        root_layout.addWidget(surface)
+
+        layout = QVBoxLayout(surface)
+        layout.setContentsMargins(22, 16, 22, 18)
+        layout.setSpacing(14)
+
+        self.title_bar = QWidget(surface)
+        self.title_bar.setObjectName('FontExcludeTitleBar')
+        title_layout = QHBoxLayout(self.title_bar)
+        title_layout.setContentsMargins(0, 0, 0, 0)
+        self.title_label = QLabel(self.tr('Font Exclusion'), self.title_bar)
+        self.title_label.setObjectName('FontExcludeTitle')
+        title_layout.addWidget(self.title_label)
+        title_layout.addStretch()
+        self.close_button = DialogCloseButton(self.title_bar)
+        self.close_button.clicked.connect(self.reject)
+        title_layout.addWidget(self.close_button)
+        layout.addWidget(self.title_bar)
+
+        # Search bar
+        self.search_edit = QLineEdit(surface)
+        self.search_edit.setObjectName('FontExcludeSearch')
+        self.search_edit.setPlaceholderText(self.tr("Filter Fonts"))
+        self.search_edit.textChanged.connect(self._filter_lists)
+        layout.addWidget(self.search_edit)
+
+        # Side-by-side list widgets
+        lists_layout = QHBoxLayout()
+
+        # Available fonts list
+        left_layout = QVBoxLayout()
+        left_layout.setSpacing(6)
+        available_title = QLabel(self.tr("Available Fonts"), surface)
+        available_title.setObjectName('FontExcludeListTitle')
+        left_layout.addWidget(available_title)
+        self.available_list = QListWidget(surface)
+        self.available_list.setObjectName('FontExcludeAvailableList')
+        self._configure_font_list(self.available_list)
+        left_layout.addWidget(self.available_list)
+        lists_layout.addLayout(left_layout)
+
+        # Center buttons
+        btn_layout = QVBoxLayout()
+        btn_layout.setSpacing(8)
+        btn_layout.addStretch()
+        self.hide_btn = QPushButton(">", surface)
+        self.hide_btn.setObjectName('FontExcludeMoveButton')
+        self.hide_btn.setFixedWidth(34)
+        self.hide_btn.setToolTip(self.tr("Hide selected fonts"))
+        self.hide_btn.clicked.connect(self._hide_fonts)
+        btn_layout.addWidget(self.hide_btn)
+        self.show_btn = QPushButton("<", surface)
+        self.show_btn.setObjectName('FontExcludeMoveButton')
+        self.show_btn.setFixedWidth(34)
+        self.show_btn.setToolTip(self.tr("Show selected fonts"))
+        self.show_btn.clicked.connect(self._show_fonts)
+        btn_layout.addWidget(self.show_btn)
+        btn_layout.addStretch()
+        lists_layout.addLayout(btn_layout)
+
+        # Excluded fonts list
+        right_layout = QVBoxLayout()
+        right_layout.setSpacing(6)
+        excluded_title = QLabel(self.tr("Hidden Fonts"), surface)
+        excluded_title.setObjectName('FontExcludeListTitle')
+        right_layout.addWidget(excluded_title)
+        self.excluded_list = QListWidget(surface)
+        self.excluded_list.setObjectName('FontExcludeHiddenList')
+        self._configure_font_list(self.excluded_list)
+        right_layout.addWidget(self.excluded_list)
+        lists_layout.addLayout(right_layout)
+
+        layout.addLayout(lists_layout)
+
+        action_layout = QHBoxLayout()
+        action_layout.setContentsMargins(0, 4, 0, 0)
+        action_layout.setSpacing(8)
+
+        self.legacy_btn = QPushButton(
+            self.tr("Hide Legacy Fonts"),
+            surface,
+        )
+        self.legacy_btn.setObjectName('FontExcludeLegacyButton')
+        self.legacy_btn.clicked.connect(self._on_add_legacy_fonts)
+        action_layout.addWidget(self.legacy_btn)
+        action_layout.addStretch()
+
+        self.cancel_button = QPushButton(self.tr('Cancel'), surface)
+        self.cancel_button.setObjectName('FontExcludeSecondaryButton')
+        self.cancel_button.clicked.connect(self.reject)
+        action_layout.addWidget(self.cancel_button)
+        self.ok_button = QPushButton(self.tr('OK'), surface)
+        self.ok_button.setObjectName('FontExcludePrimaryButton')
+        self.ok_button.setDefault(True)
+        self.ok_button.clicked.connect(self.accept)
+        action_layout.addWidget(self.ok_button)
+        layout.addLayout(action_layout)
+
+        # Populate lists
+        self._populate_lists()
+
+    @staticmethod
+    def _configure_font_list(list_widget: QListWidget) -> None:
+        list_widget.setUniformItemSizes(True)
+        list_widget.setSelectionMode(
+            QAbstractItemView.SelectionMode.ExtendedSelection
+        )
+
+    def _add_font_item(self, list_widget: QListWidget, font_name: str) -> None:
+        """Add a font name to a list widget.
+
+        Legacy fonts get a "[Legacy]" suffix. The original font name is stored
+        in ``Qt.UserRole``.
+        """
+        is_legacy = font_name in LEGACY_FONTS
+        display = f"{font_name} [{self.tr('Legacy')}]" if is_legacy else font_name
+        item = QListWidgetItem(display)
+        item.setData(Qt.ItemDataRole.UserRole, font_name)
+        list_widget.addItem(item)
+
+    def _dismiss_transient_window(self) -> None:
+        self.reject()
+
+    @staticmethod
+    def _real_name(item: QListWidgetItem) -> str:
+        """Return the original font name stored in UserRole."""
+        name = item.data(Qt.ItemDataRole.UserRole)
+        return name if name else item.text()
+
+    def _populate_lists(self) -> None:
+        self.available_list.clear()
+        self.excluded_list.clear()
+
+        for font in shared.get_filtered_font_list(shared.FONT_FAMILIES, pcfg.excluded_fonts):
+            self._add_font_item(self.available_list, font)
+
+        for font in sorted(pcfg.excluded_fonts, key=str.casefold):
+            self._add_font_item(self.excluded_list, font)
+
+    def _filter_lists(self) -> None:
+        text = self.search_edit.text().casefold()
+        for list_widget in (self.available_list, self.excluded_list):
+            for i in range(list_widget.count()):
+                item = list_widget.item(i)
+                hidden = bool(text) and text not in self._real_name(item).casefold()
+                if item.isHidden() != hidden:
+                    item.setHidden(hidden)
+                if hidden:
+                    item.setSelected(False)
+
+    def _move_selected(
+        self,
+        source: QListWidget,
+        target: QListWidget,
+    ) -> None:
+        for item in source.selectedItems():
+            if not item.isHidden():
+                target.addItem(source.takeItem(source.row(item)))
+        target.sortItems(Qt.SortOrder.AscendingOrder)
+        self._filter_lists()
+
+    def _hide_fonts(self) -> None:
+        self._move_selected(self.available_list, self.excluded_list)
+
+    def _show_fonts(self) -> None:
+        self._move_selected(self.excluded_list, self.available_list)
+
+    def _on_add_legacy_fonts(self) -> None:
+        """Detect legacy Windows fonts and add them to the hidden list automatically."""
+        # Fonts that exist on this system AND are legacy
+        exist_legacy = shared.FONT_FAMILIES & LEGACY_FONTS
+        already_excluded = {
+            self._real_name(self.excluded_list.item(i))
+            for i in range(self.excluded_list.count())
+        }
+        to_add = sorted(exist_legacy - already_excluded)
+
+        if not to_add:
+            QMessageBox.information(
+                self,
+                self.tr("Legacy Fonts"),
+                self.tr("No additional legacy fonts detected on this system."),
+            )
+            return
+
+        for font_name in to_add:
+            for i in range(self.available_list.count()):
+                if self._real_name(self.available_list.item(i)) == font_name:
+                    self.excluded_list.addItem(self.available_list.takeItem(i))
+                    break
+            else:
+                self._add_font_item(self.excluded_list, font_name)
+
+        self.excluded_list.sortItems(Qt.SortOrder.AscendingOrder)
+        self._filter_lists()
+
+        QMessageBox.information(
+            self,
+            self.tr("Legacy Fonts"),
+            self.tr(
+                "Added {count} legacy font(s) to the hidden list:\n\n{fonts}"
+            ).replace("{count}", str(len(to_add))).replace("{fonts}", "\n".join(to_add)),
+        )
+
+    def get_excluded_fonts(self) -> List[str]:
+        return sorted(
+            {
+                self._real_name(self.excluded_list.item(i))
+                for i in range(self.excluded_list.count())
+            },
+            key=str.casefold,
+        )
 
 
 class ConfigSubBlock(Widget):
@@ -418,7 +659,7 @@ class ConfigTable(QTreeView):
                 self.section_pressed.emit(section_key)
 
 
-class ConfigPanel(FramelessWindow):
+class ConfigPanel(OutsideClickFramelessMixin, FramelessWindow):
     """Non-modal frameless settings window.
 
     >>> issubclass(ConfigPanel, FramelessWindow)
@@ -428,10 +669,14 @@ class ConfigPanel(FramelessWindow):
     save_config = Signal()
     unload_models = Signal()
     prepare_selected_modules = Signal()
+    reinstall_torch = Signal()
     check_update = Signal()
     reload_textstyle = Signal(bool)
-    show_only_custom_font = Signal(bool)
     group_font_faces_changed = Signal(bool)
+    font_list_changed = Signal(bool)
+    show_pre_MT_keyword_window = Signal()
+    show_MT_keyword_window = Signal()
+    show_OCR_keyword_window = Signal()
 
     dictionary_urls = DICTIONARY_URLS
 
@@ -440,7 +685,7 @@ class ConfigPanel(FramelessWindow):
         window_type = getattr(Qt, 'WindowType', Qt)
         # Establish the owned top-level type before frameless initialization.
         super().__init__(parent, window_type.Dialog)
-        self._outside_click_filter_installed = False
+        self.font_exclude_dialog: Optional[FontExcludeDialog] = None
         self.setObjectName("ConfigPanel")
         # QNSWindow composites a transparent outer inset as an opaque black band.
         opaque_frame = ON_WINDOWS or ON_MACOS
@@ -462,10 +707,6 @@ class ConfigPanel(FramelessWindow):
         moduleTableItem = self.configTable.addHeader(self.tr('Modules'))
         generalTableItem = self.configTable.addHeader(self.tr('General'))
         
-        label_text_det = self.tr('Detector')
-        label_text_ocr = self.tr('OCR')
-        label_inpaint = self.tr('Inpainter')
-        label_translator = self.tr('Translator')
         label_pipeline = self.tr('Pipeline')
         label_llm_profile = self.tr('LLM Profile')
         label_application = self.tr('Application')
@@ -483,7 +724,26 @@ class ConfigPanel(FramelessWindow):
         pipeline_options.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         pipeline_options_layout = QVBoxLayout(pipeline_options)
         pipeline_options_layout.setContentsMargins(0, 0, 0, 0)
-        pipeline_options_layout.setSpacing(CONFIG_CONTENT_ROW_SPACING)
+        pipeline_options_layout.setSpacing(CONFIG_CONTENT_MARGIN)
+
+        torch_status_row = QWidget()
+        torch_status_row.setObjectName('ConfigInlineRow')
+        torch_status_row.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        torch_status_layout = QHBoxLayout(torch_status_row)
+        torch_status_layout.setContentsMargins(0, 0, 0, 0)
+        torch_status_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        torch_label = QLabel(self.tr('Torch'))
+        torch_label.setObjectName('TorchInfoLabel')
+        torch_status_layout.addWidget(torch_label)
+        self.torch_status_label = QLabel()
+        self.torch_status_label.setObjectName('TorchInfoLabel')
+        torch_status_layout.addWidget(self.torch_status_label)
+        torch_status_layout.addStretch()
+        self.reinstall_torch_btn = QPushButton(parent=self)
+        self.reinstall_torch_btn.clicked.connect(self.reinstall_torch)
+        torch_status_layout.addWidget(self.reinstall_torch_btn)
+        pipeline_options_layout.addWidget(torch_status_row)
+        self.refreshTorchStatus()
 
         self.empty_runcache_checker = QCheckBox(self.tr('Empty cache after RUN'))
         self.empty_runcache_checker.setObjectName('PipelineModuleActionCheckBox')
@@ -506,6 +766,7 @@ class ConfigPanel(FramelessWindow):
         )
         self.package_auto_install_checker.stateChanged.connect(self.on_package_auto_install_changed)
         pipeline_options_layout.addWidget(self.package_auto_install_checker)
+
         module_actions = QWidget()
         module_actions.setObjectName('ConfigInlineRow')
         module_actions.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
@@ -523,25 +784,31 @@ class ConfigPanel(FramelessWindow):
         self.unload_model_btn.setFixedHeight(PUSHBTN_FIXED_HEIGHT)
         module_actions_layout.addWidget(self.unload_model_btn)
         pipeline_options_layout.addWidget(module_actions)
+
+        self.replaceOCRkeywordBtn = NoBorderPushBtn(
+            self.tr('Keyword substitution for source text'),
+            self,
+        )
+        self.replaceOCRkeywordBtn.setFixedWidth(CONFIG_COMBOBOX_LONG)
+        self.replaceOCRkeywordBtn.clicked.connect(self.show_OCR_keyword_window)
+        pipeline_options_layout.addWidget(self.replaceOCRkeywordBtn)
+        self.replacePreMTkeywordBtn = NoBorderPushBtn(
+            self.tr('Keyword substitution for machine translation source text'),
+            self,
+        )
+        self.replacePreMTkeywordBtn.setFixedWidth(CONFIG_COMBOBOX_LONG)
+        self.replacePreMTkeywordBtn.clicked.connect(
+            self.show_pre_MT_keyword_window
+        )
+        pipeline_options_layout.addWidget(self.replacePreMTkeywordBtn)
+        self.replaceMTkeywordBtn = NoBorderPushBtn(
+            self.tr('Keyword substitution for machine translation'),
+            self,
+        )
+        self.replaceMTkeywordBtn.setFixedWidth(CONFIG_COMBOBOX_LONG)
+        self.replaceMTkeywordBtn.clicked.connect(self.show_MT_keyword_window)
+        pipeline_options_layout.addWidget(self.replaceMTkeywordBtn)
         pipelineConfigPanel.vlayout.addWidget(pipeline_options)
-
-        self.detect_config_panel = TextDetectConfigPanel(self.tr('Detector'), scrollWidget=self)
-        self.detect_sub_block = pipelineConfigPanel.addBlockWidget(self.detect_config_panel)
-
-        self.ocr_config_panel = OCRConfigPanel(self.tr('OCR'), scrollWidget=self)
-        self.ocr_sub_block = pipelineConfigPanel.addBlockWidget(self.ocr_config_panel)
-
-        self.inpaint_config_panel = InpaintConfigPanel(self.tr('Inpainter'), scrollWidget=self)
-        self.inpaint_sub_block = pipelineConfigPanel.addBlockWidget(self.inpaint_config_panel)
-
-        self.trans_config_panel = TranslatorConfigPanel(label_translator, scrollWidget=self)
-        self.trans_sub_block = pipelineConfigPanel.addBlockWidget(self.trans_config_panel)
-        self.pipeline_module_panels = {
-            'detector': self.detect_config_panel,
-            'ocr': self.ocr_config_panel,
-            'inpainter': self.inpaint_config_panel,
-            'translator': self.trans_config_panel,
-        }
         self.llm_profiles_panel = LLMProfilesWidget(scrollWidget=self)
         llmProfileConfigPanel.addBlockWidget(self.llm_profiles_panel)
 
@@ -733,6 +1000,12 @@ class ConfigPanel(FramelessWindow):
         self.let_group_font_faces, sublock = typesettingConfigPanel.addCheckBox(self.tr("Group font weights by family"))
         self.let_group_font_faces.stateChanged.connect(self.on_group_font_faces_changed)
 
+        self.exclude_fonts_btn = QPushButton(self.tr('Hide Unused Fonts'), parent=self)
+        self.exclude_fonts_btn.clicked.connect(self.show_font_exclusion_dialog)
+        typesettingConfigPanel.addBlockWidget(
+            self.exclude_fonts_btn, self.tr('Font Exclusion'),
+        )
+
         self.rst_imgformat_combobox, imsave_sublock = applicationConfigPanel.addCombobox(['PNG', 'JPG', 'WEBP', 'JXL'], self.tr('Result image format'))
         self.rst_imgformat_combobox.activated.connect(self.on_rst_imgformat_changed)
         self.rst_imgquality_edit = PercentageLineEdit('100')
@@ -798,6 +1071,24 @@ class ConfigPanel(FramelessWindow):
     def on_package_auto_install_changed(self):
         pcfg.package_manager.auto_install_missing_packages = self.package_auto_install_checker.isChecked()
 
+    def refreshTorchStatus(self) -> None:
+        version, device = probe_torch_package()
+        if version is not None:
+            status = self.tr(
+                'Installed ({version}, {device})'
+            ).format(version=version, device=device)
+        else:
+            status = self.tr('Not installed')
+        self.torch_status_label.setText(status)
+        self.reinstall_torch_btn.setText(
+            self.tr('Reinstall Torch') if version is not None else self.tr('Install Torch')
+        )
+        self.reinstall_torch_btn.setEnabled(True)
+
+    def setTorchInstalling(self) -> None:
+        self.torch_status_label.setText(self.tr('Installing...'))
+        self.reinstall_torch_btn.setEnabled(False)
+
     def addConfigBlock(self, header: str, parent_item: TableItem, section_key: str) -> ConfigBlock:
         cb = ConfigBlock(parent=self)
         self.configContent.addConfigBlock(cb, section_key)
@@ -805,33 +1096,19 @@ class ConfigPanel(FramelessWindow):
         return cb
 
     def showConfigDialog(self, section_key: str = None):
+        self.refreshTorchStatus()
         if section_key is not None:
             self.showSection(section_key)
         elif self.configContent.currentIndex() < 0:
             self.showSection('application')
-        self._installOutsideClickFilter()
         self.show()
         self.raise_()
         self.activateWindow()
 
     def showSection(self, section_key: str):
         section_key = SECTION_ALIASES.get(section_key, section_key)
-        self._highlightPipelineModule(None)
         self.configContent.showSection(section_key)
         self.configTable.setCurrentSection(section_key)
-
-    def _highlightPipelineModule(self, module_key: str = None):
-        for key, panel in getattr(self, 'pipeline_module_panels', {}).items():
-            panel.setJumpHighlighted(key == module_key)
-
-    def focusPipelineModule(self, module_key: str):
-        panel = self.pipeline_module_panels[module_key]
-        self.showConfigDialog('pipeline')
-        panel.updateModuleParamWidget()
-        if panel.visibleWidget is not None:
-            panel.visibleWidget.show()
-        self._highlightPipelineModule(module_key)
-        self.configContent.scrollWidgetToTop('pipeline', panel.header_widget)
 
     def on_open_onstartup_changed(self):
         pcfg.open_recent_on_startup = self.open_on_startup_checker.isChecked()
@@ -879,9 +1156,12 @@ class ConfigPanel(FramelessWindow):
         SpellCheckManager.get_instance().notify_config_changed()
         self.save_config.emit()
 
-    def open_words_manager(self):
+    def open_words_manager(self) -> None:
         dialog = DictionaryManagerDialog(self)
-        dialog.exec_()
+        try:
+            dialog.exec_()
+        finally:
+            dialog.deleteLater()
 
     def on_repo_dict_item_changed(self, item):
         url, filename = item.data(Qt.ItemDataRole.UserRole)
@@ -1049,13 +1329,43 @@ class ConfigPanel(FramelessWindow):
     def on_effect_flag_changed(self):
         pcfg.let_fnteffect_flag = self.let_effect_combox.currentIndex()
 
-    def on_show_only_custom_fonts(self):
+    def on_show_only_custom_fonts(self) -> None:
         pcfg.let_show_only_custom_fonts_flag = self.let_show_only_custom_fonts.isChecked()
-        self.show_only_custom_font.emit(pcfg.let_show_only_custom_fonts_flag)
+        self.font_list_changed.emit(pcfg.let_show_only_custom_fonts_flag)
 
-    def on_group_font_faces_changed(self):
+    def on_group_font_faces_changed(self) -> None:
         pcfg.let_group_font_faces_flag = self.let_group_font_faces.isChecked()
         self.group_font_faces_changed.emit(pcfg.let_group_font_faces_flag)
+
+    def show_font_exclusion_dialog(self) -> None:
+        dialog = self.font_exclude_dialog
+        if dialog is not None:
+            dialog.raise_()
+            dialog.activateWindow()
+            return
+
+        dialog = FontExcludeDialog(self.parentWidget() or self)
+        dialog.accepted.connect(self._apply_pending_font_exclusions)
+        dialog.finished.connect(self._clear_font_exclude_dialog)
+        self.font_exclude_dialog = dialog
+        dialog.show()
+        dialog.raise_()
+        dialog.activateWindow()
+
+    def _apply_pending_font_exclusions(self) -> None:
+        dialog = self.font_exclude_dialog
+        if dialog is not None:
+            self._apply_font_exclusions(dialog.get_excluded_fonts())
+
+    def _clear_font_exclude_dialog(self, _result: int) -> None:
+        self.font_exclude_dialog = None
+
+    def _apply_font_exclusions(self, excluded_fonts: List[str]) -> None:
+        if excluded_fonts == pcfg.excluded_fonts:
+            return
+        pcfg.excluded_fonts = excluded_fonts
+        self.font_list_changed.emit(pcfg.let_show_only_custom_fonts_flag)
+        self.save_config.emit()
 
     def focusOnTranslator(self):
         self.focusPipelineModule('translator')
@@ -1064,102 +1374,14 @@ class ConfigPanel(FramelessWindow):
         self.showConfigDialog('llm_profile')
         self.llm_profiles_panel.focusProfileControl(profile_id, target=target, expand_details=expand_details)
 
-    def focusOnInpaint(self):
-        self.focusPipelineModule('inpainter')
-
-    def focusOnDetect(self):
-        self.focusPipelineModule('detector')
-
-    def focusOnOCR(self):
-        self.focusPipelineModule('ocr')
-
     def hideEvent(self, e) -> None:
-        self._highlightPipelineModule(None)
         if hasattr(self, 'llm_profiles_panel'):
             self.llm_profiles_panel.collapseProfiles()
-        self._removeOutsideClickFilter()
         self.save_config.emit()
         return super().hideEvent(e)
 
-    def showEvent(self, event) -> None:
-        super().showEvent(event)
-        parent = self.parentWidget()
-        if parent is None:
-            return
-        geometry = self.frameGeometry()
-        geometry.moveCenter(parent.window().frameGeometry().center())
-        self.move(geometry.topLeft())
-
-    def keyPressEvent(self, event) -> None:
-        if event.key() == Qt.Key.Key_Escape:
-            self.hide()
-            event.accept()
-            return
-        return super().keyPressEvent(event)
-
-    def _installOutsideClickFilter(self):
-        if self._outside_click_filter_installed:
-            return
-        app = QApplication.instance()
-        if app is not None:
-            app.installEventFilter(self)
-            self._outside_click_filter_installed = True
-
-    def _removeOutsideClickFilter(self):
-        if not self._outside_click_filter_installed:
-            return
-        app = QApplication.instance()
-        if app is not None:
-            app.removeEventFilter(self)
-        self._outside_click_filter_installed = False
-
-    def eventFilter(self, watched, event):
-        if not self.isVisible() or not isinstance(watched, QWidget):
-            return QWidget.eventFilter(self, watched, event)
-
-        event_type = event.type()
-        if event_type == QEvent.Type.MouseButtonPress:
-            if (
-                QApplication.activePopupWidget() is None
-                and not self._widgetInsidePanel(watched)
-                and not self._activeWidgetInWhitelist()
-            ):
-                self.hide()
-
-        handled = super().eventFilter(watched, event)
-        if handled:
-            return True
-        if (
-            self._widgetInsidePanel(watched)
-            and isinstance(event, QMouseEvent)
-            and event_type == QEvent.Type.MouseButtonPress
-            and event.button() == Qt.MouseButton.LeftButton
-            and self._can_drag_title(watched)
-        ):
-            FramelessMoveResize.startSystemMove(
-                self,
-                self._global_mouse_pos(event),
-            )
-            return True
-        return handled
-
-    @staticmethod
-    def _global_mouse_pos(event: QMouseEvent):
-        if hasattr(event, 'globalPosition'):
-            return event.globalPosition().toPoint()
-        return event.globalPos()
-
-    def _can_drag_title(self, watched: QWidget) -> bool:
-        if watched is self.close_button or self.close_button.isAncestorOf(watched):
-            return False
-        return watched is self.title_bar or self.title_bar.isAncestorOf(watched)
-
-    def _widgetInsidePanel(self, widget) -> bool:
-        while widget is not None:
-            if widget is self:
-                return True
-            widget = widget.parentWidget()
-        return False
+    def _preserve_on_outside_click(self) -> bool:
+        return self._activeWidgetInWhitelist()
 
     def _activeWidgetInWhitelist(self) -> bool:
         return any(

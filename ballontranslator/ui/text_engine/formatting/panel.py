@@ -1,5 +1,5 @@
 import copy
-from typing import List
+from typing import Iterable, List
 
 from qtpy.QtWidgets import (
     QApplication,
@@ -12,7 +12,7 @@ from qtpy.QtWidgets import (
     QVBoxLayout,
 )
 from qtpy.QtCore import Signal, Qt
-from qtpy.QtGui import QFocusEvent, QTextCursor, QKeyEvent, QFont
+from qtpy.QtGui import QFocusEvent, QFont, QTextCursor, QKeyEvent
 
 from ballontranslator.utils import shared
 from ballontranslator.utils import config as C
@@ -36,7 +36,7 @@ from ...custom_widget import (
 )
 from ..item import TextBlkItem, storage_font_family
 from .advanced import TextAdvancedFormatPanel
-from ..transforms.editor import TextTransformEditSession
+from ..transforms.edit_session import TextTransformEditSession
 from ..transforms.panel import TextTransformPanel
 from .presets import TextStylePresetPanel
 from .commands import handle_ffmt_change
@@ -416,12 +416,15 @@ class FontFamilyComboBox(QComboBox):
             font.setPixelSize(font.pixelSize() + 5)
         return font
         
-    def apply_fontfamily(self):
+    def apply_fontfamily(self) -> None:
         ffamily = self._current_storage_family()
         if ffamily:
             self.param_changed.emit('font_family', ffamily)
 
-    def update_font_list(self, font_list):
+    def update_font_list(self, font_list: Iterable[str]) -> None:
+        font_list = list(font_list)
+        if not self._using_font_entries and font_list == [self.itemText(i) for i in range(self.count())]:
+            return
         self._using_font_entries = False
         self.currentIndexChanged.disconnect(self.on_fontfamily_changed)
         current_font = self._current_storage_family() or getattr(C.active_format, 'font_family', '')
@@ -430,14 +433,17 @@ class FontFamilyComboBox(QComboBox):
             index = self.count()
             self.addItem(family)
             self.setItemData(index, self._preview_font(family), Qt.ItemDataRole.FontRole)
-        if current_font and current_font not in set(font_list):
-            index = self.count()
-            self.addItem(current_font)
-            self.setItemData(index, self._preview_font(current_font), Qt.ItemDataRole.FontRole)
-        self.setCurrentText(current_font)
+        self.set_displayed_font(current_font)
         self.currentIndexChanged.connect(self.on_fontfamily_changed)
 
-    def update_font_entries(self, entries):
+    def set_displayed_font(self, font_family: str) -> None:
+        """Show a family without adding a filtered font back to the popup."""
+        index = self.findText(font_family)
+        self.setCurrentIndex(index)
+        if index < 0:
+            self.setEditText(font_family)
+
+    def update_font_entries(self, entries: Iterable[object]) -> None:
         """Update picker with registry entries.
 
         The visible text is localized ``display_family`` while the emitted value
@@ -497,7 +503,7 @@ class FontFamilyComboBox(QComboBox):
                 self.setCurrentIndex(index)
                 self.lineEdit().setText(self.itemText(index))
                 return
-        self.setCurrentText(family)
+        self.set_displayed_font(family)
 
     def _current_storage_family(self):
         entry = self.itemData(self.currentIndex()) if self._using_font_entries else None
@@ -673,7 +679,7 @@ class FontFormatPanel(Widget):
             config_name='text_transform_panel',
             config_expand_name='expand_ttransform_panel',
         )
-        self.text_transform_editor = TextTransformEditSession(
+        self.text_transform_session = TextTransformEditSession(
             self,
             self.texttransform_panel,
         )
@@ -875,16 +881,16 @@ class FontFormatPanel(Widget):
         self.fontWeightCombo.setVisible(group_font_faces)
 
     def resolve_text_transform_edits_for_save(self):
-        self.text_transform_editor.resolve_for_save()
+        self.text_transform_session.resolve_for_save()
 
     def resolve_text_transform_edits_for_history_change(self):
-        self.text_transform_editor.resolve_for_history_change()
+        self.text_transform_session.resolve_for_history_change()
 
     def resolve_text_transform_edits_for_page_change(self):
-        self.text_transform_editor.resolve_for_page_change()
+        self.text_transform_session.resolve_for_page_change()
 
     def cancel_text_transform_edits_for_scene_change(self):
-        self.text_transform_editor.cancel_for_scene_change()
+        self.text_transform_session.cancel_for_scene_change()
 
     def update_text_style_label(self):
         if self.global_mode():
@@ -1133,7 +1139,7 @@ class FontFormatPanel(Widget):
     def set_textblk_item(self, textblk_item: TextBlkItem = None, multi_select:bool=False, multi_select_items: List[TextBlkItem] = None):
         # A selection transition is a transaction boundary for transform text.
         # Commit against the old target list before replacing it.
-        self.text_transform_editor.finish_pending_edits()
+        self.text_transform_session.finish_pending_edits()
         if textblk_item is not None:
             transform_items = [textblk_item]
         elif multi_select:
@@ -1158,7 +1164,7 @@ class FontFormatPanel(Widget):
                 # the retained local item when comparing effective owners.
                 transform_items = [self.textblk_item]
 
-        self.text_transform_editor.replace_targets(transform_items)
+        self.text_transform_session.replace_targets(transform_items)
 
         if textblk_item is None:
             if not preserve_local_owner:
