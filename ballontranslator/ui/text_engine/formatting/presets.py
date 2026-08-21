@@ -9,6 +9,7 @@ from ballontranslator.utils.fontformat import FontFormat
 from ballontranslator.utils.config import save_text_styles, text_styles
 from ballontranslator.utils import shared
 from ballontranslator.utils import config as C
+from ..font_family import qfont_with_family
 from ...custom_widget import PanelArea, Widget, FlowLayout
 from ...misc import themed_icon_url
 
@@ -208,11 +209,14 @@ class TextStyleLabel(Widget):
         return super().mouseMoveEvent(event)
 
     def updatePreview(self):
-        font = self.stylelabel.font()
+        font = qfont_with_family(
+            self.stylelabel.font(),
+            self.fontfmt.font_family,
+        )
         weight = self.fontfmt.font_weight
         if weight is None:
             weight = 700 if self.fontfmt.bold else 400
-        family = self.fontfmt.font_family
+        family = font.family()
         registry = getattr(shared, 'FONT_REGISTRY', None)
         style_name = ''
         if registry is not None:

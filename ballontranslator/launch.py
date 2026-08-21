@@ -354,6 +354,24 @@ def main():
     # renderable until the picker becomes model-backed.
     shared.CUSTOM_FONTS = shared.FONT_REGISTRY.legacy_family_list(only_custom=True)
     shared.FONT_FAMILIES = set(shared.FONT_REGISTRY.legacy_family_list(only_custom=False))
+    if shared.FLAG_QT6:
+        font_database = QFontDatabase
+    else:
+        font_database = QFontDatabase()
+    shared.FONT_FAMILIES = set(font_database.families())
+
+    from ballontranslator.ui.text_engine.font_family import (
+        register_qt_font_family_aliases,
+    )
+    font_aliases = register_qt_font_family_aliases(
+        shared.FONT_FAMILIES,
+        font_database.styles,
+    )
+    if font_aliases:
+        LOGGER.info(
+            'Registered Qt-safe aliases for %d font families.',
+            len(font_aliases),
+        )
 
     app_font = QFont('Microsoft YaHei UI')
     if not app_font.exactMatch() or sys.platform == 'darwin':

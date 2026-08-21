@@ -1,4 +1,7 @@
-from typing import List, Callable
+from typing import TYPE_CHECKING, Callable, List
+
+if TYPE_CHECKING:
+    from ballontranslator.utils.fontformat import FontWeight
 
 from qtpy.QtWidgets import QComboBox, QWidget
 from qtpy.QtCore import Signal, Qt
@@ -212,6 +215,11 @@ class FontWeightComboBox(QComboBox):
     def current_weight(self) -> int:
         data = self.itemData(self.currentIndex())
         return int(data) if data is not None else 400
+
+    def weight(self) -> "FontWeight":
+        from ballontranslator.utils.fontformat import FontWeight
+
+        return FontWeight(self.current_weight())
 
     def _on_index_changed(self):
         self.param_changed.emit('font_weight', self.current_weight())

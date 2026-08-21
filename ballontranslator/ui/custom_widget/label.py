@@ -316,6 +316,7 @@ class SizeControlLabel(QLabel):
 
     def __init__(self, parent=None, direction=0, text='', alignment=None, transparent_bg=True):
         super().__init__(parent)
+        self.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
         if text:
             self.setText(text)
         if direction == 0:
@@ -332,6 +333,7 @@ class SizeControlLabel(QLabel):
 
     def mousePressEvent(self, e: QMouseEvent) -> None:
         if e.button() == Qt.MouseButton.LeftButton:
+            self.setFocus(Qt.FocusReason.MouseFocusReason)
             self.mouse_pressed = True
             if shared.FLAG_QT6:
                 g_pos = e.globalPosition().toPoint()
