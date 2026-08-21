@@ -986,8 +986,6 @@ class FontFormatPanel(Widget):
             self, param_name='srgb', inner_param_name='frgb'
         )
         self.colorPicker = self.strokeColorPicker.inner
-        self.colorPicker = ColorPickerLabel(self, param_name='frgb')
-        self.colorPicker.setObjectName('FontFormatColorPicker')
         self.colorPicker.setToolTip(self.tr("Change font color"))
         self.colorPicker.changingColor.connect(self.changingColor)
         self.colorPicker.colorChanged.connect(self.onColorLabelChanged)
@@ -1038,8 +1036,6 @@ class FontFormatPanel(Widget):
         self.fontStrokeLabel.size_ctrl_changed.connect(self.strokeWidthBox.changeByDelta)
         self.fontStrokeLabel.btn_released.connect(lambda : self.on_param_changed('stroke_width', self.strokeWidthBox.value()))
         
-        self.strokeColorPicker = ColorPickerLabel(self, param_name='srgb')
-        self.strokeColorPicker.setObjectName('FontFormatColorPicker')
         self.strokeColorPicker.setToolTip(self.tr("Change stroke color"))
         self.strokeColorPicker.changingColor.connect(self.changingColor)
         self.strokeColorPicker.colorChanged.connect(self.onColorLabelChanged)
@@ -1052,7 +1048,6 @@ class FontFormatPanel(Widget):
 
         self.letterSpacingBox = SizeComboBox([0, 10], "letter_spacing", self)
         self.letterSpacingBox.setObjectName("CompactFormatComboBox")
-        stroke_hlayout.addWidget(self.strokeColorPicker)
         stroke_hlayout.setSpacing(7)
 
         self.letterSpacingBox = SizeComboBox([0, 10], "letter_spacing", self)
