@@ -186,6 +186,24 @@ class FontWeightUiTest(unittest.TestCase):
         self.assertIs(active.font_weight, FontWeight.Normal)
         self.assertIs(panel.fontWeightBox.weight(), FontWeight.Normal)
 
+    def test_bold_button_uses_only_weights_available_for_the_font(self):
+        panel = self._make_panel()
+        active = FontFormat(font_weight=FontWeight.Medium)
+        panel.global_format = active
+        panel.set_active_format(active)
+        panel.fontWeightCombo.update_weights([300, 500, 800], 500)
+
+        panel.formatBtnGroup.boldBtn.setChecked(True)
+        panel.formatBtnGroup.setBold()
+
+        self.assertIs(active.font_weight, FontWeight.ExtraBold)
+
+        panel.formatBtnGroup.boldBtn.setChecked(False)
+        panel.formatBtnGroup.setBold()
+
+        self.assertIs(active.font_weight, FontWeight.Medium)
+        self.assertNotEqual(active.font_weight, FontWeight.Normal)
+
     def test_explicit_weight_change_canonicalizes_a_weight_alias(self):
         shared.FONT_FAMILIES = {'Example', 'Example Light'}
         panel = self._make_panel()

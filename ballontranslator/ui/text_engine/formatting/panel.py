@@ -1067,24 +1067,6 @@ class FontFormatPanel(Widget):
         lettersp_hlayout.addWidget(self.letterSpacingBox)
         lettersp_hlayout.setSpacing(7)
 
-        self.angleBox = SizeComboBox([-180, 180], "angle", self)
-        self.angleBox.setObjectName("CompactFormatComboBox")
-        self.angleBox.addItems(["0", "90", "180", "-90"])
-        self.angleBox.setToolTip(self.tr("Angle"))
-        self.angleBox.setFixedWidth(48)
-        self.angleBox.param_changed.connect(self.on_param_changed)
-
-        self.angleLabel = SizeControlLabel(self, direction=0, transparent_bg=False)
-        self.angleLabel.setObjectName("fontAngleLabel")
-        self.angleLabel.setToolTip(self.tr("Angle"))
-        self.angleLabel.size_ctrl_changed.connect(self.onAngleCtrlChanged)
-        self.angleLabel.btn_released.connect(lambda : self.on_param_changed('angle', self.angleBox.value()))
-
-        angle_hlayout = QHBoxLayout()
-        angle_hlayout.addWidget(self.angleLabel)
-        angle_hlayout.addWidget(self.angleBox)
-        angle_hlayout.setSpacing(shared.WIDGET_SPACING_CLOSE)
-        
         self.global_fontfmt_str = self.tr("Global Font Format")
         self.textstyle_panel = TextStylePresetPanel(
             self.global_fontfmt_str,
@@ -1179,7 +1161,6 @@ class FontFormatPanel(Widget):
         hl3.addLayout(stroke_hlayout)
         hl3.addLayout(lettersp_hlayout)
         hl3.addLayout(linesp_hlayout)
-        hl3.addLayout(angle_hlayout)
         hl3.setContentsMargins(3, 0, 3, 0)
         hl3.setSpacing(8)
         hl3.setSpacing(12)
@@ -1272,7 +1253,10 @@ class FontFormatPanel(Widget):
 
     def on_format_btn_changed(self, param_name: str, value):
         if param_name == 'font_weight':
-            self.on_font_weight_changed(param_name, self._nearest_available_weight(value))
+            self.on_font_weight_changed(
+                param_name,
+                self._bold_target_weight(int(value) >= 700),
+            )
         else:
             self.on_param_changed(param_name, value)
 
@@ -1292,11 +1276,40 @@ class FontFormatPanel(Widget):
         self.on_param_changed('font_weight', FontWeight(weight))
 
     def _nearest_available_weight(self, weight: int) -> int:
-        weights = [self.fontWeightCombo.itemData(index) for index in range(self.fontWeightCombo.count())]
-        weights = [int(item) for item in weights if item is not None]
+        weights = self._available_font_weights()
         if not weights:
             return int(weight)
         return min(weights, key=lambda item: (abs(item - int(weight)), -item))
+
+    def _available_font_weights(self) -> List[int]:
+        entry = self.familybox.current_entry()
+        if entry is None and shared.FONT_REGISTRY is not None:
+            resolved = shared.FONT_REGISTRY.resolve_family(
+                C.active_format.font_family,
+                C.active_format.font_weight,
+            )
+            entry = resolved.entry
+        if entry is not None and entry.weights:
+            return sorted({int(weight) for weight in entry.weights})
+        return sorted({
+            int(self.fontWeightCombo.itemData(index))
+            for index in range(self.fontWeightCombo.count())
+            if self.fontWeightCombo.itemData(index) is not None
+        })
+
+    def _bold_target_weight(self, enabled: bool) -> int:
+        weights = self._available_font_weights()
+        if not weights:
+            return 700 if enabled else 400
+        candidates = [
+            weight for weight in weights
+            if (weight >= 700) == enabled
+        ]
+        target = 700 if enabled else 400
+        return min(candidates or weights, key=lambda weight: (
+            abs(weight - target),
+            -weight,
+        ))
 
     def _sync_weight_controls(self, weight: int, update_active: bool = True):
         is_bold = weight >= 700
@@ -1353,13 +1366,10 @@ class FontFormatPanel(Widget):
             self.on_param_changed('font_weight', inferred_weight)
 
     def toggle_bold(self) -> None:
-        current_weight = FontWeight(C.active_format.font_weight)
-        weight = (
-            FontWeight.Normal
-            if current_weight >= FontWeight.DemiBold
-            else FontWeight.Bold
-        )
-        self._apply_font_weight(weight)
+        current_weight = int(C.active_format.font_weight)
+        self._apply_font_weight(FontWeight(
+            self._bold_target_weight(current_weight < 700)
+        ))
 
     def _apply_font_weight(self, weight: FontWeight) -> None:
         font_family = self.familybox.currentText()
@@ -1531,9 +1541,6 @@ class FontFormatPanel(Widget):
             mul = 0.01
         self.lineSpacingBox.setValue(self.lineSpacingBox.value() + delta * mul)
 
-    def onAngleCtrlChanged(self, delta: int) -> None:
-        self.angleBox.setValue(round(self.angleBox.value()) + delta)
-
     def sync_inline_format(
         self,
         font_format: FontFormat,
@@ -1642,7 +1649,6 @@ class FontFormatPanel(Widget):
         self.strokeWidthBox.setValue(font_format.stroke_width)
         self.lineSpacingBox.setValue(font_format.line_spacing)
         self.letterSpacingBox.setValue(font_format.letter_spacing)
-        self.angleBox.setValue(0 if self.textblk_item is None else self.textblk_item.angle)
         self.verticalChecker.setTristate(False)
         reset_checker_style(self.verticalChecker)
         self.verticalChecker.setChecked(font_format.vertical)
