@@ -715,6 +715,11 @@ class FontFormat(Config):
     # weight from an explicitly saved Normal value. __post_init__ canonicalizes
     # every live instance to FontWeight.
     font_weight: FontWeight = None
+    # Outward glyph-contour offsets as fractions of the current em size.
+    synthetic_bold_offsets: List = field(
+        default_factory=lambda: [0.0, 0.0]
+    )
+    synthetic_bold_linked: bool = True
     line_spacing: float = 1.2
     letter_spacing: float = 1.15
     ligature_common: str = 'default'
@@ -861,6 +866,54 @@ class FontFormat(Config):
                 setattr(self, name, 'default')
 
         self.font_weight = coerce_font_weight(self.font_weight)
+        legacy_synthetic_bold = da.get('synthetic_bold')
+        legacy_synthetic_mode = da.get(
+            'synthetic_bold_mode', 'uniform'
+        )
+        if legacy_synthetic_bold is not None:
+            try:
+                legacy_offset = min(
+                    max(float(legacy_synthetic_bold), 0.0), 0.2
+                )
+            except (TypeError, ValueError):
+                legacy_offset = 0.0
+            if legacy_synthetic_mode == 'horizontal':
+                self.synthetic_bold_offsets = [legacy_offset, 0.0]
+                self.synthetic_bold_linked = False
+            elif legacy_synthetic_mode == 'vertical':
+                self.synthetic_bold_offsets = [0.0, legacy_offset]
+                self.synthetic_bold_linked = False
+            else:
+                self.synthetic_bold_offsets = [
+                    legacy_offset, legacy_offset
+                ]
+                self.synthetic_bold_linked = True
+        raw_offsets = self.synthetic_bold_offsets
+        if not isinstance(raw_offsets, (list, tuple)) or len(raw_offsets) != 2:
+            LOGGER.warning(
+                'Ignoring invalid synthetic bold offsets (%r); using zero.',
+                raw_offsets,
+            )
+            raw_offsets = (0.0, 0.0)
+        offsets = []
+        for value in raw_offsets:
+            try:
+                value = float(value)
+            except (TypeError, ValueError):
+                LOGGER.warning(
+                    'Ignoring invalid synthetic bold offset (%r); using 0.',
+                    value,
+                )
+                value = 0.0
+            offsets.append(min(max(value, 0.0), 0.2))
+        self.synthetic_bold_offsets = offsets
+        if not isinstance(self.synthetic_bold_linked, bool):
+            self.synthetic_bold_linked = True
+        if self.synthetic_bold_linked:
+            linked_offset = max(
+                self.synthetic_bold_offsets
+            )
+            self.synthetic_bold_offsets = [linked_offset, linked_offset]
         if not isinstance(self.text_transform, TextTransformStack):
             if isinstance(self.text_transform, (list, tuple)):
                 transforms = []

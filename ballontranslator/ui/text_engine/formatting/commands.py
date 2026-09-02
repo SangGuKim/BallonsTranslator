@@ -162,6 +162,32 @@ def ffmt_change_font_family_and_weight(
     if set_focus:
         restore_canvas_view_focus()
 
+
+@font_formating(push_undostack=True)
+def ffmt_change_synthetic_bold_offsets(
+    param_name: str,
+    values: tuple,
+    act_ffmt: FontFormat,
+    is_global: bool,
+    blkitems: List[TextBlkItem],
+    **kwargs,
+) -> None:
+    for blkitem, value in zip(blkitems, values):
+        blkitem.setSyntheticBoldOffsets(value)
+
+
+@font_formating(push_undostack=True)
+def ffmt_change_synthetic_bold_linked(
+    param_name: str,
+    values: bool,
+    act_ffmt: FontFormat,
+    is_global: bool,
+    blkitems: List[TextBlkItem],
+    **kwargs,
+) -> None:
+    for blkitem, value in zip(blkitems, values):
+        blkitem.setSyntheticBoldLinked(value)
+
 @font_formating()
 def ffmt_change_letter_spacing(param_name: str, values: str, act_ffmt: FontFormat, is_global: bool, blkitems: List[TextBlkItem], **kwargs):
     for blkitem, value in zip(blkitems, values):
