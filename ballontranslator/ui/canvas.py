@@ -794,7 +794,7 @@ class Canvas(QGraphicsScene):
         )
     
     def set_active_layer_transparency(self, value: int):
-        if self.textEditMode():
+        if self.textEditMode() or self.drawMode():
             opacity = self.textLayer.opacity() * 100
             if value == 0 and opacity == 0:
                 value = 100
@@ -829,12 +829,14 @@ class Canvas(QGraphicsScene):
         self.txtblkShapeControl.setPos(0, 0)
         self.txtblkShapeControl.setRotation(0)
         self.txtblkShapeControl.setRect(QRectF(pos, QSizeF(1, 1)))
+        self.txtblkShapeControl.setContrastOutline(hide_control)
         if hide_control:
             self.txtblkShapeControl.hideControls()
         self.txtblkShapeControl.show()
 
     def endCreateTextblock(self, btn: int = 0) -> bool:
         self.creating_textblock = False
+        self.txtblkShapeControl.setContrastOutline(False)
         if self._text_creation_cursor_active:
             self._clear_text_creation_cursor()
         self.txtblkShapeControl.hide()
