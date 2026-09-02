@@ -2,6 +2,7 @@ import os
 import unittest
 from unittest.mock import patch
 
+import cv2
 
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 
@@ -223,7 +224,7 @@ class SyntheticBoldTest(unittest.TestCase):
             abs(emboldened_outline[3] - regular_outline[3]), 1
         )
 
-    def test_emboldened_stroke_renders_text_layout_once(self) -> None:
+    def test_emboldened_stroke_uses_one_render_and_one_dilation(self) -> None:
         block = TextBlock([0, 0, 180, 100])
         block._bounding_rect = [0, 0, 180, 100]
         block.translation = 'HH'
@@ -232,24 +233,29 @@ class SyntheticBoldTest(unittest.TestCase):
         block.fontformat.synthetic_bold_offsets = [0.05, 0.05]
         item = TextBlkItem(block, 0)
         renderer = item.effect_renderer
-        rect = item.boundingRect()
-        image = QImage(
-            220, 140, QImage.Format.Format_ARGB32_Premultiplied
-        )
-        image.fill(QColor(0, 0, 0, 0))
-        painter = QPainter(image)
+        rect = renderer.boundingRect()
+        canonical = renderer._cached_effect_source(
+            rect, 1.0, needs_alpha=True
+        )[1]
+        renderer.release_caches()
 
-        try:
-            with patch.object(
-                renderer,
-                '_paint_stroke_core',
-                wraps=renderer._paint_stroke_core,
-            ) as paint_stroke_core:
-                renderer.paint_stroke(painter, 1.0, rect)
-        finally:
-            painter.end()
+        with patch.object(
+            renderer,
+            '_paint_stroke_core',
+            wraps=renderer._paint_stroke_core,
+        ) as paint_stroke_core, patch(
+            'ballontranslator.ui.text_engine.effects.renderer.cv2.dilate',
+            wraps=cv2.dilate,
+        ) as dilate:
+            renderer._positioned_stroke_coverage(
+                rect,
+                1.0,
+                renderer._current_stroke(),
+                canonical,
+            )
 
         self.assertEqual(paint_stroke_core.call_count, 1)
+        self.assertEqual(dilate.call_count, 1)
 
     def test_bold_menu_switches_between_linked_and_xy_offsets(self) -> None:
         button = BoldToolButton()

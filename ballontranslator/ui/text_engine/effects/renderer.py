@@ -1838,6 +1838,27 @@ class TextEffectRenderer:
     def _synthetic_bold_outset(self) -> float:
         return max(self._synthetic_bold_outsets())
 
+    def _dilate_synthetic_bold_alpha(
+        self,
+        alpha: np.ndarray,
+        render_scale: float,
+    ) -> np.ndarray:
+        """Expand Stroke coverage on the configured synthetic-bold axes.
+
+        >>> hasattr(TextEffectRenderer, '_dilate_synthetic_bold_alpha')
+        True
+        """
+        x_outset, y_outset = self._synthetic_bold_outsets()
+        x_radius = math.ceil(x_outset * render_scale)
+        y_radius = math.ceil(y_outset * render_scale)
+        if x_radius <= 0 and y_radius <= 0:
+            return alpha
+        kernel = cv2.getStructuringElement(
+            cv2.MORPH_RECT,
+            (x_radius * 2 + 1, y_radius * 2 + 1),
+        )
+        return cv2.dilate(alpha, kernel, borderType=cv2.BORDER_CONSTANT)
+
     def _anisotropic_synthetic_bold_offsets(
         self,
     ) -> Tuple[Tuple[float, float], ...]:
@@ -2361,45 +2382,12 @@ class TextEffectRenderer:
         render_scale: float = 1.0,
         surface_rect: QRectF = None,
     ) -> None:
-        offsets = self._anisotropic_synthetic_bold_offsets()
-        if len(offsets) == 1:
-            painter.save()
-            try:
-                painter.translate(*offsets[0])
-                self._paint_stroke_core(
-                    painter, render_scale, surface_rect
-                )
-            finally:
-                painter.restore()
-            return
-
-        rect = self.boundingRect() if surface_rect is None else surface_rect
-        stroke_source = self._new_effect_pixmap(render_scale, rect)
-        source_painter = QPainter(stroke_source)
-        if not source_painter.isActive():
-            raise EffectRasterAllocationError(
-                'unable to begin synthetic-bold Stroke painter'
-            )
-        try:
-            source_painter.setRenderHints(_VECTOR_EFFECT_RENDER_HINTS)
-            self._prepare_effect_surface_painter(
-                source_painter, render_scale
-            )
-            source_painter.translate(-rect.topLeft())
-            self._paint_stroke_core(
-                source_painter, render_scale, rect
-            )
-        finally:
-            source_painter.end()
-
-        # 합성 굵기는 동일한 외곽선 래스터를 이동해 합성한다. 각 위치에서
-        # QTextDocument를 다시 그리면 반경에 따라 레이아웃 비용이 제곱으로 는다.
-        for x_offset, y_offset in offsets:
+        for x_offset, y_offset in self._anisotropic_synthetic_bold_offsets():
             painter.save()
             try:
                 painter.translate(x_offset, y_offset)
-                self._draw_surface_pixmap(
-                    painter, rect, stroke_source, render_scale
+                self._paint_stroke_core(
+                    painter, render_scale, surface_rect
                 )
             finally:
                 painter.restore()
@@ -3560,9 +3548,13 @@ class TextEffectRenderer:
                     layer_painter, render_scale
                 )
                 layer_painter.translate(-surface_rect.topLeft())
-                self.paint_stroke(
-                    layer_painter, render_scale, surface_rect
-                )
+                layer_painter.save()
+                try:
+                    self._paint_stroke_core(
+                        layer_painter, render_scale, surface_rect
+                    )
+                finally:
+                    layer_painter.restore()
             finally:
                 layer_painter.end()
 
@@ -3575,6 +3567,9 @@ class TextEffectRenderer:
             # sentinel, not visible foreground in the persistent band.
             alpha = rgba[..., 3]
             alpha[alpha <= 1] = 0
+            # Stroke geometry is already rasterized. Expanding its coverage
+            # here replaces the quadratic grid of translated pixmap draws.
+            alpha = self._dilate_synthetic_bold_alpha(alpha, render_scale)
             if stroke.position != 'center':
                 if canonical_alpha is None:
                     raise EffectRasterAllocationError(
