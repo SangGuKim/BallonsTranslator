@@ -2360,13 +2360,46 @@ class TextEffectRenderer:
         painter: QPainter,
         render_scale: float = 1.0,
         surface_rect: QRectF = None,
-    ):
-        for x_offset, y_offset in self._anisotropic_synthetic_bold_offsets():
+    ) -> None:
+        offsets = self._anisotropic_synthetic_bold_offsets()
+        if len(offsets) == 1:
+            painter.save()
+            try:
+                painter.translate(*offsets[0])
+                self._paint_stroke_core(
+                    painter, render_scale, surface_rect
+                )
+            finally:
+                painter.restore()
+            return
+
+        rect = self.boundingRect() if surface_rect is None else surface_rect
+        stroke_source = self._new_effect_pixmap(render_scale, rect)
+        source_painter = QPainter(stroke_source)
+        if not source_painter.isActive():
+            raise EffectRasterAllocationError(
+                'unable to begin synthetic-bold Stroke painter'
+            )
+        try:
+            source_painter.setRenderHints(_VECTOR_EFFECT_RENDER_HINTS)
+            self._prepare_effect_surface_painter(
+                source_painter, render_scale
+            )
+            source_painter.translate(-rect.topLeft())
+            self._paint_stroke_core(
+                source_painter, render_scale, rect
+            )
+        finally:
+            source_painter.end()
+
+        # 합성 굵기는 동일한 외곽선 래스터를 이동해 합성한다. 각 위치에서
+        # QTextDocument를 다시 그리면 반경에 따라 레이아웃 비용이 제곱으로 는다.
+        for x_offset, y_offset in offsets:
             painter.save()
             try:
                 painter.translate(x_offset, y_offset)
-                self._paint_stroke_core(
-                    painter, render_scale, surface_rect
+                self._draw_surface_pixmap(
+                    painter, rect, stroke_source, render_scale
                 )
             finally:
                 painter.restore()

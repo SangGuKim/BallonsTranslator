@@ -223,6 +223,34 @@ class SyntheticBoldTest(unittest.TestCase):
             abs(emboldened_outline[3] - regular_outline[3]), 1
         )
 
+    def test_emboldened_stroke_renders_text_layout_once(self) -> None:
+        block = TextBlock([0, 0, 180, 100])
+        block._bounding_rect = [0, 0, 180, 100]
+        block.translation = 'HH'
+        block.fontformat.font_size = 48
+        block.fontformat.stroke_width = 0.08
+        block.fontformat.synthetic_bold_offsets = [0.05, 0.05]
+        item = TextBlkItem(block, 0)
+        renderer = item.effect_renderer
+        rect = item.boundingRect()
+        image = QImage(
+            220, 140, QImage.Format.Format_ARGB32_Premultiplied
+        )
+        image.fill(QColor(0, 0, 0, 0))
+        painter = QPainter(image)
+
+        try:
+            with patch.object(
+                renderer,
+                '_paint_stroke_core',
+                wraps=renderer._paint_stroke_core,
+            ) as paint_stroke_core:
+                renderer.paint_stroke(painter, 1.0, rect)
+        finally:
+            painter.end()
+
+        self.assertEqual(paint_stroke_core.call_count, 1)
+
     def test_bold_menu_switches_between_linked_and_xy_offsets(self) -> None:
         button = BoldToolButton()
         linked_states = []
