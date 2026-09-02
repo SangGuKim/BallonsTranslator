@@ -70,18 +70,6 @@ def wrap_fntformat_input(values: str, blkitems: List[TextBlkItem], is_global: bo
     values = [values] * len(blkitems)
     return blkitems, values
 
-
-def should_update_textblk_format(blkitem: TextBlkItem):
-    return not blkitem.isEditing() or blkitem.cursor_selects_entire_document()
-
-
-def update_textblk_format_param(blkitem: TextBlkItem, param_name: str, value):
-    if should_update_textblk_format(blkitem) and hasattr(blkitem.fontformat, param_name):
-        blkitem.fontformat[param_name] = copy.deepcopy(value)
-        if param_name == 'font_weight':
-            blkitem.fontformat.bold = int(value) >= 700
-
-
 def font_formating(push_undostack: bool = False, is_property = True):
 
     def func_wrapper(formatting_func):
@@ -115,21 +103,18 @@ def font_formating(push_undostack: bool = False, is_property = True):
 def ffmt_change_font_family(param_name: str, values: str, act_ffmt: FontFormat, is_global: bool, blkitems: List[TextBlkItem], **kwargs):
     set_kwargs = global_default_set_kwargs if is_global else local_default_set_kwargs
     for blkitem, value in zip(blkitems, values):
-        update_textblk_format_param(blkitem, param_name, value)
         blkitem.setFontFamily(value, **set_kwargs)
 
 @font_formating()
 def ffmt_change_italic(param_name: str, values: str, act_ffmt: FontFormat, is_global: bool, blkitems: List[TextBlkItem], **kwargs):
     set_kwargs = global_default_set_kwargs if is_global else local_default_set_kwargs
     for blkitem, value in zip(blkitems, values):
-        update_textblk_format_param(blkitem, param_name, value)
         blkitem.setFontItalic(value, **set_kwargs)
 
 @font_formating()
 def ffmt_change_underline(param_name: str, values: str, act_ffmt: FontFormat, is_global: bool, blkitems: List[TextBlkItem], **kwargs):
     set_kwargs = global_default_set_kwargs if is_global else local_default_set_kwargs
     for blkitem, value in zip(blkitems, values):
-        update_textblk_format_param(blkitem, param_name, value)
         blkitem.setFontUnderline(value, **set_kwargs)
 
 @font_formating()
@@ -143,21 +128,41 @@ def ffmt_change_font_weight(
 ) -> None:
     set_kwargs = global_default_set_kwargs if is_global else local_default_set_kwargs
     for blkitem, value in zip(blkitems, values):
-        update_textblk_format_param(blkitem, param_name, value)
         blkitem.setFontWeight(value, **set_kwargs)
 
-@font_formating()
-def ffmt_change_bold(param_name: str, values: str, act_ffmt: FontFormat, is_global: bool, blkitems: List[TextBlkItem] = None, **kwargs):
-    set_kwargs = global_default_set_kwargs if is_global else local_default_set_kwargs
-    weights = [700 if value else 400 for value in values]
-    if weights:
-        act_ffmt.font_weight = weights[0]
-    for blkitem, weight in zip(blkitems, weights):
-        update_textblk_format_param(blkitem, 'font_weight', weight)
-        update_textblk_format_param(blkitem, 'bold', weight >= 700)
-        blkitem.setFontWeight(weight, **set_kwargs)
 
-@font_formating(push_undostack=True)
+def ffmt_change_font_family_and_weight(
+    font_family: str,
+    font_weight: FontWeight,
+    act_ffmt: FontFormat,
+    is_global: bool,
+    blkitems: List[TextBlkItem] = None,
+    set_focus: bool = False,
+) -> None:
+    """Apply the face family and its weight as one formatting action.
+
+    >>> callable(ffmt_change_font_family_and_weight)
+    True
+    """
+    act_ffmt.font_family = font_family
+    act_ffmt.font_weight = font_weight
+    if is_global:
+        targets = SW.canvas.selected_text_items()
+        set_kwargs = global_default_set_kwargs
+    else:
+        targets = blkitems if isinstance(blkitems, list) else [blkitems]
+        set_kwargs = local_default_set_kwargs
+    for blkitem in targets:
+        if blkitem is not None:
+            blkitem.setFontFamilyAndWeight(
+                font_family,
+                font_weight,
+                **set_kwargs,
+            )
+    if set_focus:
+        restore_canvas_view_focus()
+
+@font_formating()
 def ffmt_change_letter_spacing(param_name: str, values: str, act_ffmt: FontFormat, is_global: bool, blkitems: List[TextBlkItem], **kwargs):
     for blkitem, value in zip(blkitems, values):
         blkitem.setLetterSpacing(value)
@@ -189,21 +194,7 @@ def ffmt_change_standard_vertical_roman_alignment(
 def ffmt_change_frgb(param_name: str, values: tuple, act_ffmt: FontFormat, is_global: bool, blkitems: List[TextBlkItem], **kwargs):
     set_kwargs = global_default_set_kwargs if is_global else local_default_set_kwargs
     for blkitem, value in zip(blkitems, values):
-        update_textblk_format_param(blkitem, param_name, value)
         blkitem.setFontColor(value, **set_kwargs)
-
-@font_formating(push_undostack=True)
-def ffmt_change_srgb(param_name: str, values: tuple, act_ffmt: FontFormat, is_global: bool, blkitems: List[TextBlkItem], **kwargs):
-    set_kwargs = global_default_set_kwargs if is_global else local_default_set_kwargs
-    for blkitem, value in zip(blkitems, values):
-        update_textblk_format_param(blkitem, param_name, value)
-        blkitem.setStrokeColor(value, **set_kwargs)
-
-@font_formating(push_undostack=True)
-def ffmt_change_stroke_width(param_name: str, values: float, act_ffmt: FontFormat, is_global: bool, blkitems: List[TextBlkItem], **kwargs):
-    set_kwargs = global_default_set_kwargs if is_global else local_default_set_kwargs
-    for blkitem, value in zip(blkitems, values):
-        blkitem.setStrokeWidth(value, **set_kwargs)
 
 @font_formating()
 def ffmt_change_font_size(param_name: str, values: float, act_ffmt: FontFormat, is_global: bool, blkitems: List[TextBlkItem], clip_size=False, **kwargs):
@@ -211,15 +202,13 @@ def ffmt_change_font_size(param_name: str, values: float, act_ffmt: FontFormat, 
     for blkitem, value in zip(blkitems, values):
         if value < 0:
             continue
-        update_textblk_format_param(blkitem, param_name, value)
-        blkitem.setFontSize(px2pt(value), clip_size=clip_size, **set_kwargs)
+        value = px2pt(value)
+        blkitem.setFontSize(value, clip_size=clip_size, **set_kwargs)
 
 @font_formating(is_property=False)
 def ffmt_change_rel_font_size(param_name: str, values: float, act_ffmt: FontFormat, is_global: bool, blkitems: List[TextBlkItem], clip_size=False, **kwargs):
     set_kwargs = global_default_set_kwargs if is_global else local_default_set_kwargs
     for blkitem, value in zip(blkitems, values):
-        if should_update_textblk_format(blkitem):
-            blkitem.fontformat.font_size *= value
         blkitem.setRelFontSize(value, clip_size=clip_size, **set_kwargs)
 
 @font_formating(push_undostack=True)
@@ -228,39 +217,17 @@ def ffmt_change_alignment(param_name: str, values: float, act_ffmt: FontFormat, 
     for blkitem, value in zip(blkitems, values):
         blkitem.setAlignment(value, restore_cursor=restore_cursor)
 
-@font_formating(push_undostack=True)
-def ffmt_change_opacity(param_name: str, values: float, act_ffmt: FontFormat, is_global: bool, blkitems: List[TextBlkItem], **kwargs):
-    for blkitem, value in zip(blkitems, values):
-        blkitem.setOpacity(value)
-
 @font_formating()
 def ffmt_change_line_spacing_type(param_name: str, values: float, act_ffmt: FontFormat, is_global: bool, blkitems: List[TextBlkItem], **kwargs):
     for blkitem, value in zip(blkitems, values):
         blkitem.setLineSpacingType(value)
 
 
-@font_formating(push_undostack=True)
-def ffmt_change_shadow_offset(param_name: str, values: float, act_ffmt: FontFormat, is_global: bool, blkitems: List[TextBlkItem], **kwargs):
-    for blkitem, value in zip(blkitems, values):
-        blkitem.setBGAttribute(param_name, value)
-
-
-@font_formating()
-def ffmt_change_gradient_enabled(param_name: str, values: float, act_ffmt: FontFormat, is_global: bool, blkitems: List[TextBlkItem], **kwargs):
-    for blkitem, value in zip(blkitems, values):
-        blkitem.setGradientAttribute(param_name, value)
-
-
-ffmt_change_shadow_radius = ffmt_change_shadow_offset
-ffmt_change_shadow_strength = ffmt_change_shadow_offset
-ffmt_change_shadow_color = ffmt_change_shadow_offset
-
-ffmt_change_gradient_start_color = ffmt_change_gradient_enabled
-ffmt_change_gradient_end_color = ffmt_change_gradient_enabled
-ffmt_change_gradient_angle = ffmt_change_gradient_enabled
-ffmt_change_gradient_size = ffmt_change_gradient_enabled
-
 handle_ffmt_change = {
     name: globals().get(f'ffmt_change_{name}', empty_func)
     for name in (*FontFormat.params(), 'rel_font_size')
+    if name not in {
+        'opacity', 'srgb', 'stroke_width',
+        'shadow_radius', 'shadow_strength', 'shadow_color', 'shadow_offset',
+    }
 }

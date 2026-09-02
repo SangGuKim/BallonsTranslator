@@ -13,17 +13,21 @@ from qtpy.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from qtpy.QtCore import QEvent, QPoint, QRect, QSize, QTimer, Signal, Qt
+from qtpy.QtCore import (
+    QEvent,
+    QPoint,
+    QRect,
+    QSize,
+    QTimer,
+    Signal,
+    Qt,
+)
 
 from ...custom_widget import (
     PanelArea,
-    SmallColorPickerLabel,
-    SmallComboBox,
     SmallParamLabel,
-    SmallSizeComboBox,
-    SmallSizeControlLabel,
-    TextCheckerLabel,
 )
+from ...custom_widget.combobox import BottomBorderComboBox
 from ...adaptive_wrap_layout import AdaptiveWrapLayout
 from ballontranslator.utils.fontformat import FontFormat
 from ..annotations import (
@@ -57,6 +61,15 @@ def _atomic_unit(parent: QWidget, *widgets: QWidget):
     return unit
 
 
+def _compact_unit(unit: QWidget, *boxes: QComboBox) -> None:
+    unit.setSizePolicy(
+        QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Preferred
+    )
+    unit.layout().setSpacing(0)
+    for box in boxes:
+        box.setFixedWidth(38)
+
+
 def _adaptive_row(parent: QWidget, *units: QWidget):
     row = QWidget(parent)
     row.setObjectName('TextAdvancedFormatUnit')
@@ -66,219 +79,6 @@ def _adaptive_row(parent: QWidget, *units: QWidget):
     for unit in units:
         layout.addWidget(unit)
     return row, layout
-
-
-class TextShadowGroup(QGroupBox):
-    def __init__(self, on_param_changed: Callable = None, title=None):
-        super().__init__(title=title)
-        self.on_param_changed = on_param_changed
-        self.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
-        )
-
-        self.xoffset_box = SmallSizeComboBox([-2, 2], 'shadow_xoffset', self)
-        self.xoffset_box.setToolTip(self.tr("Set X offset"))
-        self.xoffset_box.param_changed.connect(self.on_offset_changed)
-        self.xoffset_label = SmallSizeControlLabel(
-            self,
-            direction=1,
-            text='X',
-            alignment=Qt.AlignmentFlag.AlignCenter,
-        )
-        self.xoffset_label.size_ctrl_changed.connect(self.xoffset_box.changeByDelta)
-        self.xoffset_label.btn_released.connect(self.on_offset_changed)
-
-        self.yoffset_box = SmallSizeComboBox([-2, 2], 'shadow_yoffset', self)
-        self.yoffset_box.setToolTip(self.tr("Set Y offset"))
-        self.yoffset_box.param_changed.connect(self.on_offset_changed)
-        self.yoffset_label = SmallSizeControlLabel(
-            self,
-            direction=1,
-            text='Y',
-            alignment=Qt.AlignmentFlag.AlignCenter,
-        )
-        self.yoffset_label.size_ctrl_changed.connect(self.yoffset_box.changeByDelta)
-        self.yoffset_label.btn_released.connect(self.on_offset_changed)
-
-        self.color_label = SmallColorPickerLabel(self, param_name='shadow_color')
-        self.strength_box = SmallSizeComboBox([0, 3], 'shadow_strength', self)
-        self.strength_box.setToolTip(self.tr("Set Shadow Strength"))
-        self.strength_box.param_changed.connect(self.on_param_changed)
-        self.strength_label = SmallSizeControlLabel(
-            self,
-            direction=1,
-            text=self.tr('Strength'),
-            alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-        )
-        _word_wrap_label(self.strength_label)
-        self.strength_label.size_ctrl_changed.connect(
-            lambda x: self.strength_box.changeByDelta(x, multiplier=0.03)
-        )
-        self.strength_label.btn_released.connect(
-            lambda: self.on_param_changed(
-                'shadow_strength', self.strength_box.value()
-            )
-        )
-
-        self.radius_box = SmallSizeComboBox([0, 2], 'shadow_radius', self)
-        self.radius_box.setToolTip(self.tr("Set Shadow Radius"))
-        self.radius_box.param_changed.connect(self.on_param_changed)
-        self.radius_label = SmallSizeControlLabel(
-            self,
-            direction=1,
-            text=self.tr('Radius'),
-            alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-        )
-        _word_wrap_label(self.radius_label)
-        self.radius_label.size_ctrl_changed.connect(self.radius_box.changeByDelta)
-        self.radius_label.btn_released.connect(
-            lambda: self.on_param_changed('shadow_radius', self.radius_box.value())
-        )
-
-        self.offset_label = _word_wrap_label(
-            SmallParamLabel(self.tr('Offset'), parent=self)
-        )
-        self.offset_label.setSizePolicy(
-            QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Preferred
-        )
-        self.offset_unit = _atomic_unit(
-            self,
-            self.offset_label,
-            self.xoffset_label,
-            self.xoffset_box,
-            self.yoffset_label,
-            self.yoffset_box,
-        )
-        self.color_unit = _atomic_unit(self, self.color_label)
-        self.strength_unit = _atomic_unit(
-            self, self.strength_label, self.strength_box
-        )
-        self.radius_unit = _atomic_unit(
-            self, self.radius_label, self.radius_box
-        )
-        self.atomic_units = (
-            self.offset_unit,
-            self.color_unit,
-            self.strength_unit,
-            self.radius_unit,
-        )
-
-        self.offset_row, self.offset_layout = _adaptive_row(
-            self, self.offset_unit
-        )
-        self.detail_row, self.detail_layout = _adaptive_row(
-            self,
-            self.color_unit,
-            self.strength_unit,
-            self.radius_unit,
-        )
-        self.adaptive_layout = QVBoxLayout(self)
-        self.adaptive_layout.addWidget(self.offset_row)
-        self.adaptive_layout.addWidget(self.detail_row)
-
-    def on_offset_changed(self, *args, **kwargs):
-        self.on_param_changed(
-            'shadow_offset',
-            [self.xoffset_box.value(), self.yoffset_box.value()],
-        )
-
-
-class TextGradientGroup(QGroupBox):
-    def __init__(self, on_param_changed: Callable = None):
-        super().__init__()
-        self.setTitle(self.tr('Gradient'))
-        self.on_param_changed = on_param_changed
-        self.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
-        )
-
-        self.start_picker = SmallColorPickerLabel(self, param_name='gradient_start_color')
-        self.start_picker_label = _word_wrap_label(
-            SmallParamLabel(
-                self.tr('Start Color'),
-                alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-                parent=self,
-            )
-        )
-
-        self.end_picker = SmallColorPickerLabel(self, param_name='gradient_end_color')
-        self.end_picker_label = _word_wrap_label(
-            SmallParamLabel(
-                self.tr('End Color'),
-                alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-                parent=self,
-            )
-        )
-
-        self.enable_checker = TextCheckerLabel(self.tr('Enable'), parent=self)
-        self.enable_checker.setWordWrap(True)
-        self.enable_checker.checkStateChanged.connect(
-            lambda checked: self.on_param_changed('gradient_enabled', checked)
-        )
-
-        self.angle_box = SmallSizeComboBox([0, 359], 'gradient_angle', self)
-        self.angle_box.setToolTip(self.tr("Set Gradient Angle"))
-        self.angle_box.param_changed.connect(self.on_param_changed)
-        self.angle_label = SmallSizeControlLabel(
-            self,
-            direction=1,
-            text=self.tr('Angle'),
-            alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-        )
-        _word_wrap_label(self.angle_label)
-        self.angle_label.size_ctrl_changed.connect(
-            lambda x: self.angle_box.changeByDelta(x, multiplier=1)
-        )
-        self.angle_label.btn_released.connect(
-            lambda: self.on_param_changed('gradient_angle', self.angle_box.value())
-        )
-
-        self.size_box = SmallSizeComboBox([0.5, 2], 'gradient_size', self)
-        self.size_box.setToolTip(self.tr("Set Gradient Size"))
-        self.size_box.param_changed.connect(self.on_param_changed)
-        self.size_label = SmallSizeControlLabel(
-            self,
-            direction=1,
-            text=self.tr('Size'),
-            alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-        )
-        _word_wrap_label(self.size_label)
-        self.size_label.size_ctrl_changed.connect(
-            lambda x: self.size_box.changeByDelta(x, multiplier=0.02)
-        )
-        self.size_label.btn_released.connect(
-            lambda: self.on_param_changed('gradient_size', self.size_box.value())
-        )
-
-        self.start_color_unit = _atomic_unit(
-            self, self.start_picker_label, self.start_picker
-        )
-        self.end_color_unit = _atomic_unit(
-            self, self.end_picker_label, self.end_picker
-        )
-        self.enable_unit = _atomic_unit(self, self.enable_checker)
-        self.angle_unit = _atomic_unit(self, self.angle_label, self.angle_box)
-        self.size_unit = _atomic_unit(self, self.size_label, self.size_box)
-        self.atomic_units = (
-            self.start_color_unit,
-            self.end_color_unit,
-            self.enable_unit,
-            self.angle_unit,
-            self.size_unit,
-        )
-
-        self.color_row, self.color_layout = _adaptive_row(
-            self,
-            self.start_color_unit,
-            self.end_color_unit,
-            self.enable_unit,
-        )
-        self.geometry_row, self.geometry_layout = _adaptive_row(
-            self, self.angle_unit, self.size_unit
-        )
-        self.adaptive_layout = QVBoxLayout(self)
-        self.adaptive_layout.addWidget(self.color_row)
-        self.adaptive_layout.addWidget(self.geometry_row)
 
 
 class RubyFuriganaGroup(QGroupBox):
@@ -294,7 +94,8 @@ class RubyFuriganaGroup(QGroupBox):
         self.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
         )
-        self.type_combobox = SmallComboBox(parent=self)
+        self.type_combobox = BottomBorderComboBox(parent=self)
+        self.type_combobox.setObjectName('TextAdvancedFormatParamEditor')
         self.type_combobox.addItem(self.tr('Group'), 'group')
         self.type_combobox.addItem(self.tr('Mono'), 'mono')
         self.type_label = _word_wrap_label(
@@ -302,6 +103,7 @@ class RubyFuriganaGroup(QGroupBox):
         )
 
         self.text_edit = QLineEdit(self)
+        self.text_edit.setObjectName('TextAdvancedFormatParamEditor')
         self.text_edit.setPlaceholderText(self.tr('Ruby text'))
         self.text_edit.setToolTip(
             self.tr('For Mono Ruby, separate readings with whitespace')
@@ -311,7 +113,8 @@ class RubyFuriganaGroup(QGroupBox):
             SmallParamLabel(self.tr('Reading'), parent=self)
         )
 
-        self.position_combobox = SmallComboBox(parent=self)
+        self.position_combobox = BottomBorderComboBox(parent=self)
+        self.position_combobox.setObjectName('TextAdvancedFormatParamEditor')
         self.position_combobox.addItem(self.tr('Over / Right'), 'over')
         self.position_combobox.addItem(self.tr('Under / Left'), 'under')
         self.position_label = _word_wrap_label(
@@ -411,6 +214,7 @@ class TextAdvancedFormatPanel(PanelArea):
         self.scrollContent.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
         )
+        self.scrollContent.setObjectName('TextAdvancedFormatContent')
 
         self._geometry_timer = QTimer(self)
         self._geometry_timer.setSingleShot(True)
@@ -428,13 +232,16 @@ class TextAdvancedFormatPanel(PanelArea):
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
         )
 
-        self.linespacing_type_combobox = SmallComboBox(
-            parent=self.top_section,
-            options=[
-                self.tr("Proportional"),
-                self.tr("Distance")
-            ]
+        self.linespacing_type_combobox = BottomBorderComboBox(
+            parent=self.top_section
         )
+        self.linespacing_type_combobox.setObjectName(
+            'TextAdvancedFormatParamEditor'
+        )
+        self.linespacing_type_combobox.addItems((
+            self.tr("Proportional"),
+            self.tr("Distance"),
+        ))
         self.linespacing_type_combobox.activated.connect(
             self.on_linespacing_type_changed
         )
@@ -491,7 +298,8 @@ class TextAdvancedFormatPanel(PanelArea):
         self.ligature_comboboxes = {}
         ligature_units = []
         for axis, label, tooltip in ligature_specs:
-            combo = SmallComboBox(parent=self.ligature_group)
+            combo = BottomBorderComboBox(parent=self.ligature_group)
+            combo.setObjectName('TextAdvancedFormatParamEditor')
             for option, value in zip(
                 (self.tr('Default'), self.tr('On'), self.tr('Off')),
                 LIGATURE_AXIS_VALUES,
@@ -526,36 +334,10 @@ class TextAdvancedFormatPanel(PanelArea):
         for row in self.ligature_rows:
             self.ligature_group_layout.addWidget(row)
 
-        self.opacity_box = SmallSizeComboBox(
-            [0, 1], 'opacity', self.top_section, init_value=1.
-        )
-        self.opacity_box.setToolTip(self.tr("Set Text Opacity"))
-        self.opacity_box.param_changed.connect(self.on_format_changed)
-        self.opacity_label = SmallSizeControlLabel(
-            self.top_section,
-            direction=1,
-            text=self.tr('Opacity'),
-            alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-        )
-        _word_wrap_label(self.opacity_label)
-        self.opacity_label.size_ctrl_changed.connect(self.opacity_box.changeByDelta)
-        self.opacity_label.btn_released.connect(
-            lambda: self.on_format_changed('opacity', self.opacity_box.value())
-        )
-        self.opacity_unit = _atomic_unit(
-            self.top_section, self.opacity_label, self.opacity_box
-        )
-        self.top_atomic_units = (
-            self.linespacing_type_unit,
-            self.opacity_unit,
-        )
+        self.top_atomic_units = (self.linespacing_type_unit,)
         self.top_layout = AdaptiveWrapLayout(self.top_section)
         for unit in self.top_atomic_units:
             self.top_layout.addWidget(unit)
-
-        self.shadow_group = TextShadowGroup(
-            self.on_format_changed, title=self.tr('Shadow')
-        )
 
         self.ruby_group = RubyFuriganaGroup(self.scrollContent)
         self.ruby_group.apply_requested.connect(
@@ -564,13 +346,10 @@ class TextAdvancedFormatPanel(PanelArea):
         self.ruby_group.remove_requested.connect(
             self.ruby_remove_requested.emit
         )
-        self.gradient_group = TextGradientGroup(self.on_format_changed)
         vlayout = QVBoxLayout()
         vlayout.setAlignment(Qt.AlignmentFlag.AlignTop)
         vlayout.addWidget(self.top_section)
         vlayout.addWidget(self.ligature_group)
-        vlayout.addWidget(self.shadow_group)
-        vlayout.addWidget(self.gradient_group)
         vlayout.addWidget(self.ruby_group)
 
         self.setContentLayout(vlayout)
@@ -680,8 +459,6 @@ class TextAdvancedFormatPanel(PanelArea):
                 self.top_layout,
                 *self.ligature_layouts,
                 self.ruby_group.adaptive_layout,
-                self.shadow_group.adaptive_layout,
-                self.gradient_group.adaptive_layout,
             )
         )
         left, _top, right, _bottom = self.vlayout.getContentsMargins()
@@ -789,14 +566,6 @@ class TextAdvancedFormatPanel(PanelArea):
     def on_linespacing_type_changed(self) -> None:
         self.on_format_changed('line_spacing_type', self.linespacing_type_combobox.currentIndex())
 
-    def _set_box_mixed(self, box):
-        box.blockSignals(True)
-        box.setCurrentText('')
-        box.blockSignals(False)
-
-    def _set_color_mixed(self, label):
-        label.setMixed(True)
-
     def on_ligature_axis_changed(self, _index: int) -> None:
         combo = self.sender()
         axis = str(combo.property('ligature-axis'))
@@ -804,46 +573,6 @@ class TextAdvancedFormatPanel(PanelArea):
 
     def set_active_format(self, font_format: FontFormat) -> None:
         self.linespacing_type_combobox.setCurrentIndex(font_format.line_spacing_type)
-
-        self.shadow_group.color_label.setPickerColor(font_format.shadow_color)
-        self.shadow_group.strength_box.setValue(font_format.shadow_strength)
-        self.shadow_group.radius_box.setValue(font_format.shadow_radius)
-        self.shadow_group.xoffset_box.setValue(font_format.shadow_offset[0])
-        self.shadow_group.yoffset_box.setValue(font_format.shadow_offset[1])
-
-        self.gradient_group.size_box.setValue(font_format.gradient_size)
-        self.gradient_group.angle_box.setValue(font_format.gradient_angle)
-        self.gradient_group.enable_checker.setCheckState(font_format.gradient_enabled)
-        self.gradient_group.start_picker.setPickerColor(font_format.gradient_start_color)
-        self.gradient_group.end_picker.setPickerColor(font_format.gradient_end_color)
-        # self.tate_chu_yoko_checker.setChecked(font_format.font)
-
-    def set_mixed_fields(self, mixed_fields):
-        if 'line_spacing_type' in mixed_fields:
-            self.linespacing_type_combobox.blockSignals(True)
-            self.linespacing_type_combobox.setCurrentIndex(-1)
-            self.linespacing_type_combobox.blockSignals(False)
-        if 'opacity' in mixed_fields:
-            self._set_box_mixed(self.opacity_box)
-        if 'shadow_color' in mixed_fields:
-            self._set_color_mixed(self.shadow_group.color_label)
-        if 'shadow_strength' in mixed_fields:
-            self._set_box_mixed(self.shadow_group.strength_box)
-        if 'shadow_radius' in mixed_fields:
-            self._set_box_mixed(self.shadow_group.radius_box)
-        if 'shadow_offset' in mixed_fields:
-            self._set_box_mixed(self.shadow_group.xoffset_box)
-            self._set_box_mixed(self.shadow_group.yoffset_box)
-        if 'gradient_enabled' in mixed_fields:
-            self.gradient_group.enable_checker.setStyleSheet("QLabel { background-color: rgba(160, 160, 160, 80); border: 1px dashed rgb(120, 120, 120); }")
-        if 'gradient_start_color' in mixed_fields:
-            self._set_color_mixed(self.gradient_group.start_picker)
-        if 'gradient_end_color' in mixed_fields:
-            self._set_color_mixed(self.gradient_group.end_picker)
-        if 'gradient_angle' in mixed_fields:
-            self._set_box_mixed(self.gradient_group.angle_box)
-        if 'gradient_size' in mixed_fields:
-            self._set_box_mixed(self.gradient_group.size_box)
 
     def set_line_spacing_type(self, spacing_type: int) -> None:
         if not self.linespacing_type_combobox.hasFocus():

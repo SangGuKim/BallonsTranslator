@@ -2,15 +2,27 @@ import json, os, string, traceback
 import os.path as osp
 import copy
 from dataclasses import fields
-from typing import Callable, Optional
+from typing import Mapping, Optional
 
 from . import shared
-from .fontformat import FontFormat
+from .fontformat import (
+    FontFormat,
+    normalize_fontformat_effect_payload,
+    warn_ignored_legacy_effects,
+)
 from .structures import List, Dict, Config, field, nested_dataclass
 from .logger import logger as LOGGER
 from .io_utils import json_dump_nested_obj, np, serialize_np
-from .llm_profiles import default_profiles, load_profiles, migrate_module_llm_profiles, profile_by_id, profile_to_dict, LLMProfile
+from .llm_profiles import (
+    LLMProfile,
+    default_profiles,
+    load_profiles,
+    migrate_module_llm_profiles,
+    profile_by_id,
+    profile_to_dict,
+)
 from .secret_store import SecretStore
+from .text_effects import without_project_raster_effects
 
 class RunStatus:
     FIN_DET = 1
@@ -84,6 +96,9 @@ class ModuleConfig(Config):
     # 是否在 OCR 后进行字体检测（默认不启用）
     ocr_font_detect: bool = False
     ocr_text_postprocess: str = OCRTextPostprocess.NONE
+    ocr_llm_page_level: bool = False
+    ocr_llm_mask_non_text: bool = True
+    ocr_llm_sort_reading_order: bool = True
     textdetector_params: Dict = field(default_factory=lambda: dict())
     ocr_params: Dict = field(default_factory=lambda: dict())
     translator_params: Dict = field(default_factory=lambda: dict())
@@ -99,6 +114,9 @@ class ModuleConfig(Config):
     llm_prior_context_token_budget: int = 4096
     llm_glossary_path: str = ''
     llm_glossary_mode: str = LLMGlossaryMode.Matching
+    llm_translate_vision: bool = False
+    llm_translate_summary_memory: bool = False
+    llm_translate_overwrite_summary: bool = False
 
     check_need_inpaint: bool = True
     empty_runcache: bool = False
@@ -179,6 +197,19 @@ class ModuleConfig(Config):
         return (self.enable_detect or self.enable_ocr or self.enable_translate or self.enable_inpaint) is False
 
     def __post_init__(self):
+        for setting_name, default in (
+            ('ocr_llm_page_level', False),
+            ('ocr_llm_mask_non_text', True),
+            ('ocr_llm_sort_reading_order', True),
+            ('llm_translate_vision', False),
+            ('llm_translate_summary_memory', False),
+            ('llm_translate_overwrite_summary', False),
+        ):
+            if type(getattr(self, setting_name)) is not bool:
+                LOGGER.warning(
+                    f'Discard invalid module.{setting_name} config: expected a boolean.'
+                )
+                setattr(self, setting_name, default)
         if self.ocr_text_postprocess not in OCRTextPostprocess.Valid:
             self.ocr_text_postprocess = OCRTextPostprocess.NONE
         if self.translate_context not in TranslateContext.Valid:
@@ -291,6 +322,10 @@ class ProgramConfig(Config):
     global_fontformat: FontFormat = field(default_factory=lambda: FontFormat())
     recent_proj_list: List = field(default_factory=lambda: list())
     show_page_list: bool = False
+    show_llm_page_summary: bool = True
+    expand_llm_page_summary: bool = True
+    show_llm_compact_memory: bool = True
+    expand_llm_compact_memory: bool = True
     imgtrans_paintmode: bool = False
     imgtrans_textedit: bool = True
     imgtrans_textblock: bool = True
@@ -404,10 +439,35 @@ class ProgramConfig(Config):
                 params = module_cfg['textdetector_params']
                 if 'rtdetr_v2' in params:
                     params['ctbd'] = params.pop('rtdetr_v2')
-            # LLM translator keys must be consumed before module-param patching drops unknown keys.
             migrate_module_llm_profiles(module_cfg)
 
-        return ProgramConfig(**config_dict)
+        effect_notices = set()
+        if 'global_fontformat' in config_dict:
+            global_fontformat = config_dict['global_fontformat']
+            if isinstance(global_fontformat, Mapping):
+                normalized, notices = normalize_fontformat_effect_payload(
+                    global_fontformat
+                )
+                config_dict['global_fontformat'] = normalized
+                effect_notices.update(notices)
+            else:
+                LOGGER.warning(
+                    'Ignoring invalid global FontFormat config %r.',
+                    global_fontformat,
+                )
+                config_dict.pop('global_fontformat')
+        warn_ignored_legacy_effects(effect_notices, 'program config')
+
+        config = ProgramConfig(**config_dict)
+        portable_effects = without_project_raster_effects(
+            config.global_fontformat.text_effects
+        )
+        if portable_effects != config.global_fontformat.text_effects:
+            LOGGER.warning(
+                'Discard project-only raster effects from global FontFormat.'
+            )
+            config.global_fontformat.text_effects = portable_effects
+        return config
     
 
 pcfg = ProgramConfig()
@@ -425,11 +485,26 @@ def load_textstyle_from(p: str, raise_exception = False):
         with open(p, 'r', encoding='utf8') as f:
             style_list = json.loads(f.read())
             styles_loaded = []
+            effect_notices = set()
             for style in style_list:
                 try:
-                    styles_loaded.append(FontFormat(**style))
-                except Exception as e:
+                    normalized, notices = (
+                        normalize_fontformat_effect_payload(style)
+                    )
+                    effect_notices.update(notices)
+                    style_format = FontFormat(**normalized)
+                    portable_effects = without_project_raster_effects(
+                        style_format.text_effects
+                    )
+                    if portable_effects != style_format.text_effects:
+                        LOGGER.warning(
+                            'Discard project-only raster effects from text style.'
+                        )
+                        style_format.text_effects = portable_effects
+                    styles_loaded.append(style_format)
+                except Exception:
                     LOGGER.warning(f'Skip invalid text style: {style}')
+            warn_ignored_legacy_effects(effect_notices, 'text styles')
     except Exception as e:
         LOGGER.error(f'Failed to load text style from {p}: {e}')
         if raise_exception:
@@ -496,6 +571,9 @@ def json_dump_program_config(obj, **kwargs):
 def save_config():
     global pcfg
     try:
+        pcfg.global_fontformat.text_effects = without_project_raster_effects(
+            pcfg.global_fontformat.text_effects
+        )
         config_dir = osp.dirname(shared.CONFIG_PATH)
         if config_dir and not osp.exists(config_dir):
             os.makedirs(config_dir)
@@ -514,6 +592,10 @@ def save_config():
 def save_text_styles(raise_exception = False):
     global pcfg, text_styles
     try:
+        for style in text_styles:
+            style.text_effects = without_project_raster_effects(
+                style.text_effects
+            )
         style_dir = osp.dirname(pcfg.text_styles_path)
         if not osp.exists(style_dir):
             os.makedirs(style_dir)

@@ -10,7 +10,7 @@ from unittest.mock import Mock, patch
 
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 
-from qtpy.QtCore import QObject, QEvent, QPoint, Qt
+from qtpy.QtCore import QCoreApplication, QObject, QEvent, QLocale, QPoint, Qt
 from qtpy.QtGui import QColor, QTextCursor, QTextDocument
 from qtpy.QtTest import QSignalSpy, QTest
 from qtpy.QtWidgets import (
@@ -36,9 +36,7 @@ from ballontranslator.ui.run_pipeline_dialog import (
 from ballontranslator.ui.configpanel import ConfigPanel
 from ballontranslator.ui.drawingpanel import DrawingPanel
 from ballontranslator.ui.canvas import Canvas
-from ballontranslator.ui.llm_profile_widgets import ProfileDetailsWidget
 from ballontranslator.ui.module_parse_widgets import ModuleParamDialog
-from ballontranslator.ui.page_range_progress import PageRangeProgressWidget
 from ballontranslator.ui.mainwindow import MainWindow
 from ballontranslator.ui.mainwindowbars import TitleBar
 from ballontranslator.ui.module_manager import ModuleManager
@@ -54,7 +52,6 @@ from ballontranslator.ui.text_engine.pipeline_formatting import (
 )
 from ballontranslator.utils.config import (
     AutoTateChuYokoConfig,
-    LLMGlossaryMode,
     LLMTranslateContext,
     OCRTextPostprocess,
     ProgramConfig,
@@ -64,8 +61,17 @@ from ballontranslator.utils.config import (
 )
 from ballontranslator.utils.fontformat import FontFormat
 from ballontranslator.utils.proj_imgtrans import ProjImgTrans
+from ballontranslator.utils.text_effects import (
+    GlowEffect,
+    GradientStop,
+    HollowEffect,
+    LinearGradientPaint,
+    ShadowEffect,
+    SolidPaint,
+    StrokeEffect,
+    TextEffectStack,
+)
 from ballontranslator.utils.textblock import TextBlock
-from ballontranslator.modules import GET_VALID_TEXTDETECTORS
 from ballontranslator.modules.translators import base as translator_base
 from ballontranslator.modules.translators.base import postprocess_translation_text
 from ballontranslator.modules.translators.trans_llm import LLMTranslator
@@ -119,6 +125,15 @@ class RunPipelineDialogTests(unittest.TestCase):
             pcfg.module.llm_prior_context_token_budget,
             pcfg.module.llm_glossary_path,
             pcfg.module.llm_glossary_mode,
+            pcfg.module.llm_translate_vision,
+            pcfg.module.llm_translate_summary_memory,
+            pcfg.module.llm_translate_overwrite_summary,
+        )
+        self._llm_ocr_settings = (
+            pcfg.module.ocr,
+            pcfg.module.ocr_llm_page_level,
+            pcfg.module.ocr_llm_mask_non_text,
+            pcfg.module.ocr_llm_sort_reading_order,
         )
         self._visibility_states = (
             pcfg.show_textdetector_tool,
@@ -166,7 +181,16 @@ class RunPipelineDialogTests(unittest.TestCase):
             pcfg.module.llm_prior_context_token_budget,
             pcfg.module.llm_glossary_path,
             pcfg.module.llm_glossary_mode,
+            pcfg.module.llm_translate_vision,
+            pcfg.module.llm_translate_summary_memory,
+            pcfg.module.llm_translate_overwrite_summary,
         ) = self._pipeline_general_settings
+        (
+            pcfg.module.ocr,
+            pcfg.module.ocr_llm_page_level,
+            pcfg.module.ocr_llm_mask_non_text,
+            pcfg.module.ocr_llm_sort_reading_order,
+        ) = self._llm_ocr_settings
         self._save_config_patcher.stop()
 
     def test_ocr_text_postprocess_radio_buttons_update_module_config(self):
@@ -637,63 +661,88 @@ class RunPipelineDialogTests(unittest.TestCase):
         self.assertEqual(pcfg.module.translate_context, 'textblock')
         self.assertFalse(dialog.context_row.isHidden())
         self.assertTrue(dialog.llm_context_row.isHidden())
-        self.assertTrue(dialog.history_budget_row.isHidden())
+        self.assertTrue(dialog.llm_context_budget_row.isHidden())
         self.assertFalse(hasattr(dialog, 'show_MT_keyword_window'))
         dialog.close()
 
-    def test_llm_context_and_glossary_controls_persist_disabled_values(self):
+    def test_llm_ocr_run_settings_are_conditional_and_persistent(self):
+        pcfg.module.ocr = 'LLMOCR'
+        pcfg.module.ocr_llm_page_level = False
+        pcfg.module.ocr_llm_mask_non_text = True
+        pcfg.module.ocr_llm_sort_reading_order = False
+        dialog = RunPipelineDialog()
+
+        self.assertFalse(dialog.llm_ocr_settings.isHidden())
+        self.assertFalse(dialog.llm_ocr_mask_non_text.isEnabled())
+
+        dialog.llm_ocr_page_level.click()
+        self.assertTrue(pcfg.module.ocr_llm_page_level)
+        dialog.llm_ocr_mask_non_text.click()
+        dialog.llm_ocr_reading_order.click()
+        self.assertFalse(pcfg.module.ocr_llm_mask_non_text)
+        self.assertTrue(pcfg.module.ocr_llm_sort_reading_order)
+
+        dialog.setModuleSelection('ocr', 'mit48px')
+        self.assertTrue(dialog.llm_ocr_settings.isHidden())
+        dialog.close()
+
+    def test_llm_context_budget_stays_visible_and_persists(self):
         pcfg.module.llm_translate_context = LLMTranslateContext.PAGE
         pcfg.module.llm_prior_context_token_budget = 8192
-        pcfg.module.llm_glossary_path = ''
-        pcfg.module.llm_glossary_mode = LLMGlossaryMode.Matching
         translate_context = pcfg.module.translate_context
         dialog = RunPipelineDialog(
             translator_metadata={'name': 'LLMTranslator'},
         )
 
         self.assertTrue(dialog.context_row.isHidden())
-        self.assertFalse(dialog.llm_context_row.isHidden())
-        self.assertTrue(dialog.history_budget_row.isHidden())
-        self.assertEqual(
-            [
-                dialog.llm_context_combobox.itemText(index)
-                for index in range(dialog.llm_context_combobox.count())
-            ],
-            ['page', '+history'],
-        )
+        self.assertFalse(dialog.llm_context_budget_row.isHidden())
         history_index = dialog.llm_context_combobox.findData(
             LLMTranslateContext.HISTORY
         )
         dialog.llm_context_combobox.setCurrentIndex(history_index)
-        self.assertFalse(dialog.history_budget_row.isHidden())
+        self.assertFalse(dialog.llm_context_budget_row.isHidden())
         dialog.prior_context_token_budget.setValue(16384)
-        page_index = dialog.llm_context_combobox.findData(
-            LLMTranslateContext.PAGE
-        )
-        dialog.llm_context_combobox.setCurrentIndex(page_index)
-        dialog.glossary_path_edit.setText('/tmp/glossary.tsv')
-        all_index = dialog.glossary_mode_combobox.findData(LLMGlossaryMode.All)
-        dialog.glossary_mode_combobox.setCurrentIndex(all_index)
-        dialog.glossary_path_edit.clear()
 
         self.assertEqual(
             (
                 pcfg.module.llm_translate_context,
                 pcfg.module.llm_prior_context_token_budget,
-                pcfg.module.llm_glossary_path,
-                pcfg.module.llm_glossary_mode,
             ),
             (
-                LLMTranslateContext.PAGE,
+                LLMTranslateContext.HISTORY,
                 16384,
-                '',
-                LLMGlossaryMode.All,
             ),
         )
         self.assertEqual(pcfg.module.translate_context, translate_context)
-        self.assertEqual(dialog.prior_context_token_budget.value(), 16384)
-        self.assertTrue(dialog.history_budget_row.isHidden())
-        self.assertTrue(dialog.glossary_mode_combobox.isEnabled())
+        dialog.close()
+
+    def test_llm_context_uses_summary_memory_and_overwrite_controls(self):
+        pcfg.module.llm_translate_context = LLMTranslateContext.PAGE
+        pcfg.module.llm_translate_vision = False
+        pcfg.module.llm_translate_summary_memory = False
+        pcfg.module.llm_translate_overwrite_summary = False
+        dialog = RunPipelineDialog(
+            translator_metadata={'name': 'LLMTranslator'},
+        )
+
+        self.assertFalse(dialog.llm_overwrite_summary_checkbox.isChecked())
+        self.assertTrue(dialog.llm_features_row.isHidden())
+
+        dialog.llm_summary_memory_checkbox.setChecked(True)
+        self.assertTrue(pcfg.module.llm_translate_summary_memory)
+        self.assertFalse(dialog.llm_features_row.isHidden())
+        dialog.llm_overwrite_summary_checkbox.setChecked(True)
+        self.assertTrue(pcfg.module.llm_translate_overwrite_summary)
+
+        dialog.llm_vision_checkbox.setChecked(True)
+        dialog.llm_vision_checkbox.setChecked(False)
+        self.assertTrue(dialog.llm_summary_memory_checkbox.isChecked())
+        self.assertTrue(pcfg.module.llm_translate_summary_memory)
+
+        dialog.llm_summary_memory_checkbox.setChecked(False)
+        self.assertFalse(pcfg.module.llm_translate_summary_memory)
+        self.assertTrue(dialog.llm_features_row.isHidden())
+        self.assertTrue(pcfg.module.llm_translate_overwrite_summary)
         dialog.close()
 
     def test_copy_source_glossary_error_preserves_clipboard(self):
@@ -828,26 +877,65 @@ class RunPipelineDialogTests(unittest.TestCase):
                 'display_name': 'Delay',
             }
         }
+        events = []
         with patch(
-            'ballontranslator.ui.module_parse_widgets.save_config'
+            'ballontranslator.ui.module_parse_widgets.save_config',
+            side_effect=lambda: events.append(('save',)),
         ) as save:
             dialog = ModuleParamDialog('ocr', 'demo', params, False)
-            changes = []
             dialog.paramwidget_edited.connect(
-                lambda *args: changes.append(args)
+                lambda *args: events.append(('edit', args))
             )
             dialog_ref = weakref.ref(dialog)
             dialog.show()
             self.app.processEvents()
-            dialog.param_widget.param_widgets['delay'].setText('2')
-            self.assertEqual(changes[-1][:3], ('ocr', 'demo', 'delay'))
+            editor = dialog.param_widget.param_widgets['delay']
+            editor.setFocus()
+            editor.selectAll()
+            QTest.keyClicks(editor, '2')
+            self.assertEqual(events, [])
             dialog.close()
+            self.app.processEvents()
+            self.assertEqual(events[0][0], 'edit')
+            self.assertEqual(
+                events[0][1][:3], ('ocr', 'demo', 'delay')
+            )
+            self.assertEqual(events[0][1][3]['content'], '2')
+            self.assertEqual(events[1], ('save',))
             save.assert_called_once_with()
             del dialog
             QApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
             self.app.processEvents()
             gc.collect()
             self.assertIsNone(dialog_ref())
+
+    def test_numeric_module_param_keeps_dot_decimal_notation(self) -> None:
+        previous_locale = QLocale()
+        QLocale.setDefault(QLocale('de_DE'))
+        try:
+            with patch(
+                'ballontranslator.ui.module_parse_widgets.save_config'
+            ):
+                dialog = ModuleParamDialog(
+                    'translator',
+                    'demo',
+                    {'delay': {'type': 'line_editor', 'value': 0.0}},
+                    False,
+                )
+                try:
+                    editor = dialog.param_widget.param_widgets['delay']
+                    dialog.show()
+                    self.app.processEvents()
+                    editor.setFocus()
+                    editor.selectAll()
+                    QTest.keyClicks(editor, '0.3')
+                    QTest.keyClick(editor, Qt.Key.Key_Tab)
+                    self.app.processEvents()
+                    self.assertEqual(editor.text(), '0.3')
+                finally:
+                    dialog.close()
+        finally:
+            QLocale.setDefault(previous_locale)
 
     def test_module_param_dialog_shows_empty_message(self):
         with patch('ballontranslator.ui.module_parse_widgets.save_config'):
@@ -1041,6 +1129,12 @@ class RunPipelineDialogTests(unittest.TestCase):
 
     def test_view_actions_only_control_bottom_bar_visibility(self):
         window = QMainWindow()
+        self.addCleanup(
+            QCoreApplication.sendPostedEvents,
+            None,
+            QEvent.Type.DeferredDelete,
+        )
+        self.addCleanup(window.deleteLater)
         title_bar = TitleBar(window)
         visibility_texts = [action.text() for action in title_bar.moduleVisibilityActions]
         self.assertEqual(
@@ -1066,13 +1160,17 @@ class RunPipelineDialogTests(unittest.TestCase):
             [action.text() for action in title_bar.sponsorToolBtn.menu().actions()],
             ['Patreon', 'Afdian'],
         )
-        self.assertEqual(
-            [
+        self.assertTrue(
+            {
                 action.text()
                 for action in title_bar.toolsToolBtn.menu().actions()
                 if not action.isSeparator()
-            ],
-            ['区域合并工具', 'Font Exclusion'],
+            }.issuperset({
+                '区域合并工具',
+                'Photoshop Bridge',
+                'Path Reorder',
+                'Font Exclusion',
+            })
         )
         self.assertTrue(hasattr(title_bar, 'font_exclusion_trigger'))
         with patch(
@@ -1118,9 +1216,6 @@ class RunPipelineDialogTests(unittest.TestCase):
         self.assertFalse(widgets[0].visible)
         self.assertTrue(widgets[2].visible)
         self.assertTrue(widgets[3].visible)
-        title_bar.deleteLater()
-        window.deleteLater()
-
     def test_tool_visibility_round_trips_through_program_config(self):
         config = ProgramConfig(show_ocr_tool=False)
         restored = ProgramConfig(**json.loads(json_dump_program_config(config)))
@@ -1377,18 +1472,54 @@ class RunPipelineDialogTests(unittest.TestCase):
         global_format = FontFormat(
             font_family='Render Font',
             font_size=47,
-            stroke_width=0.18,
             frgb=[1, 2, 3],
-            srgb=[4, 5, 6],
             alignment=2,
             vertical=True,
-            opacity=0.75,
+            text_effects=TextEffectStack(
+                0.75,
+                (
+                    ShadowEffect(
+                        shadow_type='drop',
+                        angle=26.565,
+                        distance=0.224,
+                    ),
+                    GlowEffect(size=0.2, spread=0.05),
+                    StrokeEffect(
+                        width=0.18,
+                        paint=LinearGradientPaint(stops=(
+                            GradientStop(0.0, (4, 5, 6), 1.0),
+                            GradientStop(1.0, (40, 50, 60), 0.0),
+                        )),
+                    ),
+                    StrokeEffect(width=0.9),
+                    HollowEffect(),
+                    GlowEffect(glow_type='inner', size=0.1),
+                    ShadowEffect(
+                        shadow_type='inner',
+                        blur=0.4,
+                    ),
+                ),
+            ),
             shadow_radius=3,
             shadow_strength=0.4,
             shadow_color=[7, 8, 9],
             shadow_offset=[2, 1],
         )
         blocks = [TextBlock(), TextBlock()]
+        extra_strokes = []
+        for block in blocks:
+            extra = StrokeEffect(
+                width=0.7,
+                paint=SolidPaint((70, 80, 90)),
+            )
+            extra_strokes.append(extra)
+            block.fontformat.text_effects = TextEffectStack(
+                0.4,
+                (
+                    StrokeEffect(width=0.05),
+                    extra,
+                ),
+            )
         project = SimpleNamespace(
             num_pages=1,
             get_blklist_byidx=lambda _: blocks,
@@ -1397,6 +1528,7 @@ class RunPipelineDialogTests(unittest.TestCase):
         )
         owner = SimpleNamespace(
             imgtrans_proj=project,
+            llmContextEditor=SimpleNamespace(refresh_context=Mock()),
             backup_blkstyles=[],
             _run_imgtrans_wo_textstyle_update=False,
             _render_only=True,
@@ -1435,7 +1567,7 @@ class RunPipelineDialogTests(unittest.TestCase):
             for name, value in old_flags.items():
                 setattr(pcfg, name, value)
 
-        for block in blocks:
+        for block, extra in zip(blocks, extra_strokes):
             self.assertEqual(block.font_size, 47)
             self.assertEqual(block.stroke_width, 0.18)
             self.assertEqual(block.fontformat.frgb, [1, 2, 3])
@@ -1444,10 +1576,100 @@ class RunPipelineDialogTests(unittest.TestCase):
             self.assertTrue(block.vertical)
             self.assertEqual(block.font_family, 'Render Font')
             self.assertEqual(block.fontformat.opacity, 0.75)
-            self.assertEqual(block.fontformat.shadow_radius, 3)
-            self.assertEqual(block.fontformat.shadow_strength, 0.4)
-            self.assertEqual(block.fontformat.shadow_color, [7, 8, 9])
-            self.assertEqual(block.fontformat.shadow_offset, [2, 1])
+            effects = block.fontformat.text_effects.effects
+            self.assertIs(effects[-1], extra)
+            self.assertEqual(effects[-2].paint, SolidPaint((4, 5, 6)))
+            self.assertEqual(
+                effects,
+                (
+                    global_format.text_effects.effects[0],
+                    global_format.text_effects.effects[1],
+                    global_format.text_effects.effects[4],
+                    global_format.text_effects.effects[5],
+                    global_format.text_effects.effects[6],
+                    effects[-2],
+                    extra,
+                ),
+            )
+            self.assertEqual(block.fontformat.shadow_radius, 0.0)
+            self.assertEqual(block.fontformat.shadow_strength, 1.0)
+            self.assertEqual(block.fontformat.shadow_color, [0, 0, 0])
+            self.assertEqual(block.fontformat.shadow_offset, [0.0, 0.0])
+
+    def test_width_only_run_preserves_gradient_and_inserts_primary_stroke(self):
+        global_format = FontFormat(text_effects=TextEffectStack(effects=(
+            StrokeEffect(width=0.42),
+        )))
+        gradient = LinearGradientPaint(stops=(
+            GradientStop(0.0, (4, 5, 6), 1.0),
+            GradientStop(1.0, (40, 50, 60), 0.0),
+        ))
+        existing = TextBlock()
+        existing.fontformat.text_effects = TextEffectStack(effects=(
+            StrokeEffect(
+                width=0.1,
+                paint=gradient,
+                position='outside',
+            ),
+        ))
+        missing = TextBlock()
+        blocks = [existing, missing]
+        project = SimpleNamespace(
+            num_pages=1,
+            get_blklist_byidx=lambda _: blocks,
+            set_current_img_byidx=lambda _: None,
+            save=lambda: None,
+        )
+        owner = SimpleNamespace(
+            imgtrans_proj=project,
+            llmContextEditor=SimpleNamespace(refresh_context=Mock()),
+            backup_blkstyles=[],
+            _run_imgtrans_wo_textstyle_update=False,
+            _render_only=False,
+            _render_global_format=global_format,
+            postprocess_translations=lambda _: None,
+            textPanel=SimpleNamespace(
+                formatpanel=SimpleNamespace(global_format=global_format)
+            ),
+            st_manager=SimpleNamespace(
+                auto_textlayout_flag=False,
+                updateSceneTextitems=lambda: None,
+                textblk_item_list=[],
+            ),
+            pageList=SimpleNamespace(
+                currentIndex=lambda: SimpleNamespace(row=lambda: 0)
+            ),
+            canvas=SimpleNamespace(updateCanvas=lambda: None),
+            saveCurrentPage=lambda *args: None,
+        )
+
+        with patch.multiple(
+            pcfg,
+            let_alignment_flag=0,
+            let_writing_mode_flag=0,
+            let_fntsize_flag=0,
+            let_fntstroke_flag=1,
+            let_fntcolor_flag=0,
+            let_fnt_scolor_flag=0,
+            let_fnteffect_flag=0,
+            let_family_flag=0,
+        ), patch.multiple(
+            pcfg.module,
+            enable_detect=False,
+            enable_ocr=False,
+            enable_translate=False,
+            enable_inpaint=False,
+        ):
+            MainWindow.on_pagtrans_finished(owner, 0)
+
+        existing_stroke = existing.fontformat.text_effects[0]
+        self.assertEqual(existing_stroke.width, 0.42)
+        self.assertEqual(existing_stroke.paint, gradient)
+        self.assertEqual(existing_stroke.position, 'outside')
+        inserted = missing.fontformat.text_effects[0]
+        self.assertEqual(inserted.width, 0.42)
+        self.assertEqual(inserted.paint, SolidPaint())
+        self.assertEqual(inserted.position, 'outside')
 
     def test_pipeline_auto_tate_chu_yoko_preserves_plain_text_format(self):
         settings = AutoTateChuYokoConfig(
@@ -1651,6 +1873,7 @@ class RunPipelineDialogTests(unittest.TestCase):
         )
         owner = SimpleNamespace(
             imgtrans_proj=project,
+            llmContextEditor=SimpleNamespace(refresh_context=Mock()),
             backup_blkstyles=[],
             _run_imgtrans_wo_textstyle_update=False,
             _render_only=False,
@@ -1743,6 +1966,7 @@ class RunPipelineDialogTests(unittest.TestCase):
         )
         owner = SimpleNamespace(
             imgtrans_proj=project,
+            llmContextEditor=SimpleNamespace(refresh_context=Mock()),
             backup_blkstyles=[],
             _run_imgtrans_wo_textstyle_update=False,
             _render_only=False,

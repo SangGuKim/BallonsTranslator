@@ -1,6 +1,6 @@
 
 from enum import Enum
-from typing import List, Sequence, Union, Tuple
+from typing import List, Optional, Sequence, Union, Tuple
 import numpy as np
 import copy
 
@@ -476,11 +476,12 @@ class SceneTextManager(QObject):
         if key_event is not None:
             key_event.accept()
 
-    def setTextEditMode(self, edit: bool = False):
+    def setTextEditMode(self, edit: bool = False) -> None:
         if edit:
             self.textpanel.show()
             self.canvas.textLayer.show()
         else:
+            self.canvas.alpha_mask_edit_session.deactivate()
             self.canvas.cancel_path_reorder()
             self.txtblkShapeControl.setBlkItem(None)
             self.textpanel.hide()
@@ -490,8 +491,10 @@ class SceneTextManager(QObject):
     def clearSceneTextitems(
         self,
         reason=SceneTextReplacementReason.CURRENT_PAGE_RELOAD,
-    ):
+    ) -> None:
+        self.canvas.alpha_mask_edit_session.deactivate()
         self.canvas.cancel_path_reorder()
+        self.canvas.set_primary_selected_text_item(None)
         if reason is not SceneTextReplacementReason.PAGE_CHANGE:
             self.formatpanel.cancel_text_transform_edits_for_scene_change()
         self._text_move_snapshot.clear()
@@ -593,7 +596,6 @@ class SceneTextManager(QObject):
             self.on_inline_format_changed
         )
         textblk_item.pasted.connect(self.onBlkitemPaste)
-        textblk_item.cursor_format_changed.connect(self.on_textitem_cursor_format_changed)
         return textblk_item
 
     def deleteTextblkItemList(self, blkitem_list: List[TextBlkItem], p_widget_list: List[TransPairWidget]):
@@ -665,6 +667,7 @@ class SceneTextManager(QObject):
 
     def onLeftbuttonPressed(self, blk_id: int):
         blk_item = self.textblk_item_list[blk_id]
+        self.canvas.set_primary_selected_text_item(blk_item)
         self.txtblkShapeControl.setBlkItem(blk_item)
         selections = self.canvas.selected_text_items(sort=False)
         if blk_item not in selections:
@@ -680,10 +683,6 @@ class SceneTextManager(QObject):
         self.canvas.editing_textblkitem = None
         self.textblk_item_list[blk_id].setSelected(True)
         self.txtblkShapeControl.endEditing()
-
-    def on_textitem_cursor_format_changed(self, blk_id: int):
-        if blk_id < len(self.textblk_item_list):
-            self.formatpanel.update_rich_text_cursor_format(self.textblk_item_list[blk_id])
 
     def editingTextItem(self) -> TextBlkItem:
         if self.txtblkShapeControl.isVisible() and self.canvas.editing_textblkitem is not None:
@@ -805,11 +804,11 @@ class SceneTextManager(QObject):
             if len(blkitem_list) == 1:
                 self.formatpanel.set_textblk_item(blkitem_list[0])
             else:
-                self.formatpanel.set_textblk_item(multi_select=True, multi_select_items=blkitem_list)
+                self.formatpanel.set_textblk_item(multi_select=True)
 
     def onFormatTextblks(self, fmt: FontFormat = None):
         if fmt is None:
-            fmt = self.formatpanel.effective_global_format()
+            fmt = self.formatpanel.global_format
         self.apply_fontformat(fmt)
 
     def onAutoLayoutTextblks(self):
@@ -846,11 +845,19 @@ class SceneTextManager(QObject):
             self.textEditList.set_selected_list([t.idx for t in textitems])
             self._update_selection_panels(textitems)
 
-    def _update_selection_panels(self, textitems: List[TextBlkItem]) -> None:
+    def _update_selection_panels(
+        self,
+        textitems: List[TextBlkItem],
+        primary_item: Optional[TextBlkItem] = None,
+    ) -> None:
         if len(textitems) == 1:
             self.formatpanel.set_textblk_item(textitems[-1])
         else:
-            self.formatpanel.set_textblk_item(multi_select=bool(textitems), multi_select_items=textitems)
+            if primary_item is None:
+                primary_item = self.canvas.primary_selected_text_item(textitems)
+            self.formatpanel.set_textblk_item(
+                multi_select=bool(textitems), primary_item=primary_item
+            )
 
     def on_projective_scale_requested(self, item: TextBlkItem) -> None:
         session = self.formatpanel.text_transform_session
@@ -1069,10 +1076,9 @@ class SceneTextManager(QObject):
         xywh = np.copy(xyxy)
         xywh[[2, 3]] -= xywh[[0, 1]]
         block.set_lines_by_xywh(xywh)
-        global_format = self.formatpanel.effective_global_format()
-        block.src_is_vertical = global_format.vertical
+        block.src_is_vertical = self.formatpanel.global_format.vertical
         blk_item = TextBlkItem(block, len(self.textblk_item_list), set_format=False, show_rect=True)
-        blk_item.set_fontformat(global_format)
+        blk_item.set_fontformat(self.formatpanel.global_format)
         self.canvas.push_undo_command(CreateItemCommand(blk_item, self))
 
     def on_paste2selected_textitems(self):
@@ -1172,12 +1178,20 @@ class SceneTextManager(QObject):
         )
         self.canvas.push_text_command(command=None, update_pushed_step=True)
 
-    def apply_fontformat(self, fontformat: FontFormat):
+    def apply_fontformat(self, fontformat: FontFormat) -> None:
+        """Apply one whole format after settling transient edit owners.
+
+        >>> callable(SceneTextManager.apply_fontformat)
+        True
+        """
         selected_blks = self.canvas.selected_text_items()
         trans_widget_list = []
         for blk in selected_blks:
             trans_widget_list.append(self.pairwidget_list[blk.idx].e_trans)
         if len(selected_blks) > 0:
+            # Whole-format replacement can reindex or remove Image effects;
+            # settle the same transient owners used by undo/redo first.
+            self.formatpanel.resolve_text_transform_edits_for_history_change()
             self.canvas.push_undo_command(
                 ApplyFontformatCommand(
                     selected_blks,
@@ -1185,15 +1199,12 @@ class SceneTextManager(QObject):
                     fontformat,
                 )
             )
-            if len(selected_blks) == 1:
-                self.formatpanel.set_textblk_item(selected_blks[0])
+            if self.formatpanel.global_mode():
+                if id(self.formatpanel.active_text_style_format()) != id(fontformat):
+                    self.formatpanel.deactivate_style_label()
+                self.formatpanel.on_active_textstyle_label_changed()
             else:
-                self.formatpanel.set_textblk_item(multi_select=True, multi_select_items=selected_blks)
-        elif self.formatpanel.global_mode() and self.formatpanel.active_text_style_label() is None:
-            updated_keys = self.formatpanel.global_format.merge(fontformat, compare=True)
-            if len(updated_keys) > 0:
-                self.formatpanel.set_active_format(self.formatpanel.global_format)
-                self.formatpanel.set_globalfmt_title()
+                self.formatpanel.set_active_format(fontformat)
 
     def on_transwidget_selection_changed(self) -> None:
         editing_item = self.canvas.editing_textblkitem
@@ -1215,9 +1226,18 @@ class SceneTextManager(QObject):
                 self.textblk_item_list[idx].setSelected(True)
         finally:
             self.canvas.block_selection_signal = False
+        selected = self.canvas.selected_text_items()
+        anchor = self.textEditList.sel_anchor_widget
+        primary_item = (
+            self.textblk_item_list[anchor.idx]
+            if anchor is not None
+            and self.textblk_item_list[anchor.idx] in selected
+            else None
+        )
+        self.canvas.set_primary_selected_text_item(primary_item)
         # Refresh transform/format consumers without syncing back into the
         # pair list and discarding its Shift/drag anchor.
-        self._update_selection_panels(self.canvas.selected_text_items())
+        self._update_selection_panels(selected, primary_item)
 
     def on_textedit_list_focusout(self):
         fw = self.app.focusWidget()

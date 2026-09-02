@@ -7,10 +7,7 @@ from qtpy.QtCore import QRect
 from qtpy.QtWidgets import QApplication, QLabel, QWidget
 
 from ballontranslator.ui.adaptive_wrap_layout import AdaptiveWrapLayout
-from ballontranslator.ui.text_engine.formatting.advanced import (
-    TextShadowGroup,
-    _atomic_unit,
-)
+from ballontranslator.ui.text_engine.formatting.advanced import _atomic_unit
 
 
 class AdaptiveWrapLayoutTest(unittest.TestCase):
@@ -31,22 +28,6 @@ class AdaptiveWrapLayoutTest(unittest.TestCase):
         layout.setGeometry(QRect(0, 0, 300, 40))
 
         self.assertEqual(second.geometry().right(), layout.contentsRect().right())
-
-    def test_advanced_format_editors_expand_across_semantic_rows(self):
-        shadow = TextShadowGroup(lambda *_args: None, 'Shadow')
-        shadow.resize(600, 120)
-        shadow.show()
-        self.app.processEvents()
-
-        self.assertEqual(
-            shadow.offset_unit.geometry().right(),
-            shadow.offset_layout.contentsRect().right(),
-        )
-        self.assertEqual(
-            shadow.radius_unit.geometry().right(),
-            shadow.detail_layout.contentsRect().right(),
-        )
-
 
 if __name__ == '__main__':
     unittest.main()

@@ -2,12 +2,16 @@ from typing import Any, List, Optional
 
 from qtpy.QtWidgets import QApplication, QMenu, QMessageBox, QStackedLayout, QGraphicsDropShadowEffect, QLineEdit, QSizePolicy, QHBoxLayout, QVBoxLayout, QPushButton, QLabel
 from qtpy.QtCore import QEvent, QMimeData, QPoint, Signal, Qt, QRectF
-from qtpy.QtGui import QDrag, QFont, QFontMetrics, QColor, QPixmap, QPainter, QContextMenuEvent, QMouseEvent
+from qtpy.QtGui import QDrag, QFontMetrics, QColor, QPixmap, QPainter, QContextMenuEvent, QMouseEvent
 
 
 from ballontranslator.utils.fontformat import FontFormat
+from ballontranslator.utils.text_effects import (
+    effect_paint_fallback_color,
+    without_project_raster_effects,
+    primary_stroke,
+)
 from ballontranslator.utils.config import save_text_styles, text_styles
-from ballontranslator.utils import shared
 from ballontranslator.utils import config as C
 from ..font_family import qfont_with_family
 from ...custom_widget import PanelArea, Widget, FlowLayout
@@ -157,11 +161,15 @@ class TextStyleLabel(Widget):
             fontfmt = C.active_format
         if fontfmt is None:
             return
-        updated_keys = self.fontfmt.merge(fontfmt, compare=True)
+        portable_format = fontfmt.deepcopy()
+        portable_format.text_effects = without_project_raster_effects(
+            portable_format.text_effects
+        )
+        updated_keys = self.fontfmt.merge(portable_format, compare=True)
         if len(updated_keys) > 0:
             save_text_styles()
         
-        preview_keys = {'font_family', 'font_weight', 'bold', 'italic', 'frgb', 'srgb', 'stroke_width'}
+        preview_keys = {'font_family', 'frgb', 'text_effects'}
         for k in updated_keys:
             if k in preview_keys:
                 self.updatePreview()
@@ -213,24 +221,6 @@ class TextStyleLabel(Widget):
             self.stylelabel.font(),
             self.fontfmt.font_family,
         )
-        weight = self.fontfmt.font_weight
-        if weight is None:
-            weight = 700 if self.fontfmt.bold else 400
-        family = font.family()
-        registry = getattr(shared, 'FONT_REGISTRY', None)
-        style_name = ''
-        if registry is not None:
-            resolved = registry.resolve_family(family, weight)
-            family = resolved.qt_family or family
-            style_name = getattr(getattr(resolved, 'face', None), 'style_name', '')
-        font.setFamily(family)
-        if style_name and hasattr(font, 'setStyleName'):
-            font.setStyleName(style_name)
-        try:
-            font.setWeight(QFont.Weight(int(weight)))
-        except (TypeError, ValueError):
-            font.setWeight(int(weight))
-        font.setItalic(self.fontfmt.italic)
         self.stylelabel.setFont(font)
 
         d = int(self.colorw.width() * 0.66)
@@ -241,11 +231,13 @@ class TextStyleLabel(Widget):
         painter = QPainter(pixmap)
         painter.setRenderHints(QPainter.Antialiasing)
         painter.setPen(Qt.NoPen)
+        painter.setOpacity(self.fontfmt.text_effects.overall_opacity)
 
         draw_rect, draw_radius = QRectF(0, 0, d, d), radius
-        if self.fontfmt.stroke_width > 0:
-            r, g, b = self.fontfmt.stroke_color()
-            color = QColor(r, g, b, 255)
+        stroke = primary_stroke(self.fontfmt.text_effects)
+        if stroke is not None and not stroke.is_neutral():
+            r, g, b = effect_paint_fallback_color(stroke.paint)
+            color = QColor(r, g, b, round(255 * stroke.opacity))
             painter.setBrush(color)
             painter.drawRoundedRect(draw_rect, draw_radius, draw_radius)
             draw_radius = draw_radius * 0.66
@@ -500,13 +492,6 @@ class TextStylePresetPanel(PanelArea):
         if source_index < insert_index:
             insert_index -= 1
         self._moveStyleLabelToIndex(source_index, insert_index)
-
-    def setArrowButtonsEnabled(self, apply_enabled: bool, update_enabled: bool):
-        for item in self.flayout._items:
-            widget = item.widget()
-            if isinstance(widget, TextStyleLabel):
-                widget.apply_btn.setEnabled(apply_enabled)
-                widget.update_btn.setEnabled(update_enabled)
 
     def on_deletebtn_clicked(self):
         w: TextStyleLabel = self.sender()

@@ -1,19 +1,20 @@
-from typing import List, Union, Tuple
+from typing import Callable, List, Optional, Union, Tuple
 
 import numpy as np
 from qtpy.QtWidgets import QGraphicsOpacityEffect, QLabel, QColorDialog, QMenu
-from qtpy.QtCore import  Qt, QEvent, QPropertyAnimation, QEasingCurve, Signal
-from qtpy.QtGui import QMouseEvent, QWheelEvent, QColor, QPixmap, QPainter
+from qtpy.QtCore import (
+    Qt,
+    QEvent,
+    QObject,
+    QPropertyAnimation,
+    QEasingCurve,
+    Signal,
+)
+from qtpy.QtGui import QMouseEvent, QResizeEvent, QWheelEvent, QColor
 
 
 from ballontranslator.utils.shared import CONFIG_FONTSIZE_CONTENT
 from ballontranslator.utils import shared
-from ballontranslator.utils.config import pcfg
-from ..misc import DARKFILL_ACTIVE, LIGHTFILL_ACTIVE
-
-
-def _icon_fill_color(fill_attr: str) -> QColor:
-    return QColor(fill_attr.split('"')[1])
 
 
 class FadeLabel(QLabel):
@@ -55,26 +56,26 @@ class ColorPickerLabel(QLabel):
         super().__init__(parent=parent, *args, **kwargs)
         self.color: QColor = None
         self.param_name = param_name
-        self.mixed = False
+        self.dialog_color_provider: Optional[
+            Callable[[], Optional[Union[QColor, List, Tuple]]]
+        ] = None
 
-    def _style_selector(self) -> str:
-        '''
-        Scope for this widget's own stylesheet. A selector-less rule such as
-        "background-color: black" cascades into every descendant *and* into the
-        QToolTip Qt spawns for the widget, which would repaint the tooltip in
-        the swatch colour and hide its text.
-        '''
-        name = self.objectName()
-        return f'#{name}' if name else type(self).__name__
-
-    def _set_background(self, css_color: str):
-        self.setStyleSheet(f'{self._style_selector()} {{ background-color: {css_color}; }}')
-
-    def mousePressEvent(self, event: QMouseEvent):
+    def mousePressEvent(self, event: QMouseEvent) -> None:
         btn = event.button()
         if btn == Qt.MouseButton.LeftButton:
             self.changingColor.emit()
-            initial_color = self.color if self.color is not None else QColor(255, 255, 255)
+            initial_color = self.color
+            if self.dialog_color_provider is not None:
+                provided_color = self.dialog_color_provider()
+                if provided_color is not None:
+                    initial_color = (
+                        provided_color
+                        if isinstance(provided_color, QColor)
+                        else QColor(*provided_color)
+                    )
+                    self.setPickerColor(initial_color)
+            if initial_color is None:
+                initial_color = QColor(255, 255, 255)
             color = QColorDialog.getColor(initial_color, self.window())
             is_valid = color.isValid()
             if is_valid:
@@ -87,49 +88,15 @@ class ColorPickerLabel(QLabel):
             if rst == apply_act and self.color is not None:
                 self.apply_color.emit(self.param_name, self.rgb())
 
-    def setMixed(self, mixed: bool):
-        self.mixed = mixed
-        if mixed:
-            self.color = QColor(255, 255, 255)
-            size = self.size()
-            width = max(size.width(), 24)
-            height = max(size.height(), 24)
-            pixmap = QPixmap(width, height)
-            pixmap.fill(QColor(255, 255, 255))
-            painter = QPainter(pixmap)
-            fill_attr = DARKFILL_ACTIVE if pcfg.darkmode else LIGHTFILL_ACTIVE
-            mixed_color = _icon_fill_color(fill_attr)
-            cells = 6
-            for row in range(cells):
-                for col in range(cells):
-                    if (row + col) % 2 == 0:
-                        x0 = round(col * width / cells)
-                        y0 = round(row * height / cells)
-                        x1 = round((col + 1) * width / cells)
-                        y1 = round((row + 1) * height / cells)
-                        painter.fillRect(
-                            x0,
-                            y0,
-                            max(1, x1 - x0),
-                            max(1, y1 - y0),
-                            mixed_color,
-                        )
-            painter.end()
-            self.setPixmap(pixmap)
-            self.setScaledContents(True)
-            self._set_background('white')
-
     def setPickerColor(self, color: Union[QColor, List, Tuple]):
-        self.mixed = False
-        self.setPixmap(QPixmap())
-        self.setScaledContents(False)
         if not isinstance(color, QColor):
             if isinstance(color, np.ndarray):
                 color = np.round(color).astype(np.uint8).tolist()
             color = QColor(*color)
         self.color = color
         r, g, b, a = color.getRgb()
-        self._set_background(f'rgba({r}, {g}, {b}, {a})')
+        rgba = f'rgba({r}, {g}, {b}, {a})'
+        self.setStyleSheet("background-color: " + rgba)
 
     def rgb(self) -> List:
         color = self.color
@@ -145,22 +112,18 @@ class SmallColorPickerLabel(ColorPickerLabel):
 
 
 class NestedColorPickerLabel(ColorPickerLabel):
-    '''
-    Stroke color swatch that hosts the fill color swatch inside it, so the
-    outline/fill pair reads as one glyph instead of two unlabelled squares.
+    """An outline-color swatch containing a separately clickable fill swatch."""
 
-    The inner swatch is a child widget, which means Qt routes a click on it to
-    the inner picker and a click on the surrounding margin to this one. No
-    manual hit testing is involved, and both swatches keep the plain
-    ColorPickerLabel API their signal handlers already rely on.
-    '''
-
-    # Fraction of the leftover horizontal space placed left of the inner
-    # swatch. Both swatches are square, so 0.5 centres it; drop it below 0.5 to
-    # bias the inner square towards the left.
     INNER_LEFT_RATIO = 0.5
 
-    def __init__(self, parent=None, param_name='', inner_param_name='', *args, **kwargs):
+    def __init__(
+        self,
+        parent=None,
+        param_name: str = '',
+        inner_param_name: str = '',
+        *args,
+        **kwargs,
+    ) -> None:
         super().__init__(parent=parent, param_name=param_name, *args, **kwargs)
         self.setObjectName('NestedStrokeColorPicker')
         self.inner = ColorPickerLabel(self, param_name=inner_param_name)
@@ -168,45 +131,36 @@ class NestedColorPickerLabel(ColorPickerLabel):
         self.setProperty('innerHover', False)
         self.inner.installEventFilter(self)
 
-    def eventFilter(self, watched, event):
-        # Qt keeps a parent in the :hover state while the cursor is over one of
-        # its children, so hovering the inner square would light up both borders
-        # and read as if both swatches were selected. Track the inner swatch and
-        # let the stylesheet drop this one's highlight while it is hovered.
-        if watched is self.inner:
-            etype = event.type()
-            if etype == QEvent.Type.Enter:
-                self._set_inner_hover(True)
-            elif etype == QEvent.Type.Leave:
-                self._set_inner_hover(False)
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        if watched is not self.inner:
+            return super().eventFilter(watched, event)
+        event_type = event.type()
+        if event_type == QEvent.Type.Enter:
+            self._set_inner_hover(True)
+        elif event_type == QEvent.Type.Leave:
+            self._set_inner_hover(False)
         return super().eventFilter(watched, event)
 
-    def _set_inner_hover(self, hovering: bool):
+    def _set_inner_hover(self, hovering: bool) -> None:
         if bool(self.property('innerHover')) == hovering:
             return
         self.setProperty('innerHover', hovering)
-        # A dynamic property only reaches the stylesheet after a re-polish.
+        # Enter/Leave is a safe point to refresh this property-scoped rule.
         self.style().unpolish(self)
         self.style().polish(self)
+        self.update()
 
-    def resizeEvent(self, event):
+    def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
-        self._layout_inner()
-
-    def showEvent(self, event):
-        super().showEvent(event)
-        self._layout_inner()
-
-    def _layout_inner(self):
         content = self.contentsRect()
-        # The stylesheet pins the inner swatch with equal min/max, so prefer the
-        # resolved minimum and only fall back before the style is polished.
         hint = self.inner.sizeHint()
-        w = self.inner.minimumWidth() or hint.width()
-        h = self.inner.minimumHeight() or hint.height()
-        x = content.left() + round(max(0, content.width() - w) * self.INNER_LEFT_RATIO)
-        y = content.top() + round(max(0, content.height() - h) / 2)
-        self.inner.setGeometry(x, y, w, h)
+        width = self.inner.minimumWidth() or hint.width()
+        height = self.inner.minimumHeight() or hint.height()
+        x = content.left() + round(
+            max(0, content.width() - width) * self.INNER_LEFT_RATIO
+        )
+        y = content.top() + round(max(0, content.height() - height) / 2)
+        self.inner.setGeometry(x, y, width, height)
         self.inner.raise_()
 
 
@@ -313,6 +267,7 @@ class SizeControlLabel(QLabel):
 
     btn_released = Signal()
     size_ctrl_changed = Signal(int)
+    reset_requested = Signal()
 
     def __init__(self, parent=None, direction=0, text='', alignment=None, transparent_bg=True):
         super().__init__(parent)
@@ -326,6 +281,8 @@ class SizeControlLabel(QLabel):
         self.cur_pos = 0
         self.direction = direction
         self.mouse_pressed = False
+        self._drag_changed = False
+        self.size_ctrl_changed.connect(self._on_size_ctrl_changed)
         if transparent_bg:
             self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         if alignment is not None:
@@ -335,6 +292,7 @@ class SizeControlLabel(QLabel):
         if e.button() == Qt.MouseButton.LeftButton:
             self.setFocus(Qt.FocusReason.MouseFocusReason)
             self.mouse_pressed = True
+            self._drag_changed = False
             if shared.FLAG_QT6:
                 g_pos = e.globalPosition().toPoint()
             else:
@@ -345,7 +303,9 @@ class SizeControlLabel(QLabel):
     def mouseReleaseEvent(self, e: QMouseEvent) -> None:
         if e.button() == Qt.MouseButton.LeftButton:
             self.mouse_pressed = False
-            self.btn_released.emit()
+            if self._drag_changed:
+                self.btn_released.emit()
+            self._drag_changed = False
         return super().mouseReleaseEvent(e)
 
     def mouseMoveEvent(self, e: QMouseEvent) -> None:
@@ -356,12 +316,27 @@ class SizeControlLabel(QLabel):
                 g_pos = e.globalPos()
             if self.direction == 0:
                 new_pos = g_pos.x()
-                self.size_ctrl_changed.emit(new_pos - self.cur_pos)
+                delta = new_pos - self.cur_pos
             else:
                 new_pos = g_pos.y()
-                self.size_ctrl_changed.emit(self.cur_pos - new_pos)
+                delta = self.cur_pos - new_pos
+            if delta:
+                self.size_ctrl_changed.emit(delta)
             self.cur_pos = new_pos
         return super().mouseMoveEvent(e)
+
+    def _on_size_ctrl_changed(self, delta: int) -> None:
+        if self.mouse_pressed and delta:
+            self._drag_changed = True
+
+    def mouseDoubleClickEvent(self, e: QMouseEvent) -> None:
+        if e.button() == Qt.MouseButton.LeftButton:
+            self.mouse_pressed = False
+            self._drag_changed = False
+            self.reset_requested.emit()
+            e.accept()
+            return
+        super().mouseDoubleClickEvent(e)
     
 
 class SmallSizeControlLabel(SizeControlLabel):

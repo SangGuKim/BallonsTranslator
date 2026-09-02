@@ -74,7 +74,6 @@ os.environ['NUMBA_CACHE_DIR'] = osp.join(shared.cache_dir, 'numba')
 
 PATH_ROOT = Path(shared.PROGRAM_PATH)
 PATH_FONTS = str(PATH_ROOT / 'fonts')
-PATH_FONT_REGISTRY_CONFIG = PATH_ROOT / 'resources' / 'font_registry.json'
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--proj-dir", default='', type=str, help='Open project directory on startup')
@@ -210,10 +209,6 @@ def core_requirements_env(config_path: str) -> dict:
     return installer_env_with_pypi_mirror(os.environ.copy(), read_saved_pypi_mirror(config_path))
 
 
-def optional_existing_path(path: Path):
-    return str(path) if path.exists() else None
-
-
 def main():
 
     if args.debug:
@@ -314,21 +309,20 @@ def main():
         LOGGER.warning(f'target display language file {langp} doesnt exist.')
     LOGGER.info(f'set display language to {lang}')
 
-    # Fonts
-    # Capture system families before custom fonts are registered so the runtime
-    # registry can keep system/custom sources separate.
+    # Capture system families before registering bundled fonts so the runtime
+    # registry can keep both sources separate.
     if shared.FLAG_QT6:
-        qfont_db = QFontDatabase
-        system_families = sorted(QFontDatabase.families(), key=str.casefold)
+        font_database = QFontDatabase
     else:
-        qfont_db = QFontDatabase()
-        system_families = sorted(qfont_db.families(), key=str.casefold)
-
+        font_database = QFontDatabase()
+    system_families = sorted(font_database.families(), key=str.casefold)
     font_paths = []
     if osp.exists(PATH_FONTS):
-        # macOS/PyQt6 can fail addApplicationFont() for relative paths, so keep
-        # resolved paths for both registry metadata and Qt application loading.
-        font_paths = [str(Path(fp).resolve()) for fp in find_all_files_recursive(PATH_FONTS, FONT_EXTS)]
+        # Qt can reject relative application-font paths on macOS.
+        font_paths = [
+            str(Path(path).resolve())
+            for path in find_all_files_recursive(PATH_FONTS, FONT_EXTS)
+        ]
 
     if sys.platform == 'win32' and args.headless:
         # font database does not initialise on windows with qpa -offscreen:
@@ -339,32 +333,31 @@ def main():
             fp_list = find_all_files_recursive(fd, FONT_EXTS)
             for fp in fp_list:
                 QFontDatabase.addApplicationFont(str(Path(fp).resolve()))
-        system_families = sorted(qfont_db.families(), key=str.casefold)
+        system_families = sorted(font_database.families(), key=str.casefold)
 
-    from ballontranslator.utils.font_registry import build_font_registry
+    from ballontranslator.utils.font_registry import (
+        build_font_registry,
+        ensure_font_registry_overrides,
+    )
+    font_registry_path = ensure_font_registry_overrides(APP_DIR)
     shared.FONT_REGISTRY = build_font_registry(
-        qfont_db,
+        font_database,
         font_paths,
         system_families,
-        locale=shared.DEFAULT_DISPLAY_LANG,
-        font_registry_config_path=optional_existing_path(PATH_FONT_REGISTRY_CONFIG),
+        locale=lang,
+        font_registry_path=(
+            str(font_registry_path)
+            if font_registry_path is not None
+            else None
+        ),
     )
-    # Compatibility adapters for older plain family-list paths. The
-    # registry keeps localized display names separately; these lists stay
-    # renderable until the picker becomes model-backed.
-    shared.CUSTOM_FONTS = shared.FONT_REGISTRY.legacy_family_list(only_custom=True)
-    shared.FONT_FAMILIES = set(shared.FONT_REGISTRY.legacy_family_list(only_custom=False))
-    if shared.FLAG_QT6:
-        font_database = QFontDatabase
-    else:
-        font_database = QFontDatabase()
     shared.FONT_FAMILIES = set(font_database.families())
 
     from ballontranslator.ui.text_engine.font_family import (
         register_qt_font_family_aliases,
     )
     font_aliases = register_qt_font_family_aliases(
-        shared.FONT_FAMILIES,
+        font_database.families(),
         font_database.styles,
     )
     if font_aliases:
@@ -398,10 +391,6 @@ def main():
     BT.restart_signal.connect(restart)
 
     if not args.headless:
-        # if shared.SCREEN_W > 1707 and sys.platform == 'win32':   # higher than 2560 (1440p) / 1.5
-        #     # https://github.com/dmMaze/BallonsTranslator/issues/220
-        BT.comicTransSplitter.setHandleWidth(7)
-
         ballontrans.setWindowIcon(QIcon(shared.ICON_PATH))
         ballontrans.show()
         if shared.ON_WINDOWS:

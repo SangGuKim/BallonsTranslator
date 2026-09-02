@@ -1,11 +1,14 @@
-from typing import TYPE_CHECKING, Callable, List
+from typing import Callable, List, Optional
 
-if TYPE_CHECKING:
-    from ballontranslator.utils.fontformat import FontWeight
-
-from qtpy.QtWidgets import QComboBox, QWidget
-from qtpy.QtCore import Signal, Qt
-from qtpy.QtGui import QDoubleValidator, QPainter
+from qtpy.QtWidgets import (
+    QComboBox,
+    QStyle,
+    QStyleOptionComboBox,
+    QStylePainter,
+    QWidget,
+)
+from qtpy.QtCore import QSize, Signal, Qt
+from qtpy.QtGui import QDoubleValidator, QPaintEvent, QPainter, QPalette
 
 from ballontranslator.utils.shared import CONFIG_COMBOBOX_LONG, CONFIG_COMBOBOX_MIDEAN, CONFIG_COMBOBOX_SHORT, CONFIG_COMBOBOX_HEIGHT
 from .push_button import NoBorderPushBtn
@@ -45,20 +48,90 @@ class BottomBorderComboBox(QComboBox):
 
     ARROW_SIZE = 12
 
-    def __init__(self, parent: QWidget = None):
+    def __init__(
+        self,
+        parent: QWidget = None,
+        *,
+        text_alignment: Optional[Qt.AlignmentFlag] = None,
+    ) -> None:
         super().__init__(parent)
+        self._text_alignment = text_alignment
+        self._width_sample_text: Optional[str] = None
         self.setProperty('bottomBorderSelector', True)
 
-    def paintEvent(self, event):
-        super().paintEvent(event)
-        painter = QPainter(self)
+    def setWidthSampleText(self, text: str) -> None:
+        """Prefer room for ``text`` while retaining normal shrink behavior."""
+        self._width_sample_text = text
+        self.updateGeometry()
+
+    def sizeHint(self) -> QSize:
+        size = super().sizeHint()
+        if not self._width_sample_text:
+            return size
+        option = QStyleOptionComboBox()
+        self.initStyleOption(option)
+        contents = QSize(
+            option.fontMetrics.horizontalAdvance(self._width_sample_text),
+            option.fontMetrics.height(),
+        )
+        reference = self.style().sizeFromContents(
+            QStyle.ContentsType.CT_ComboBox,
+            option,
+            contents,
+            self,
+        )
+        size.setWidth(max(size.width(), reference.width()))
+        return size
+
+    def paintEvent(self, event: QPaintEvent) -> None:
+        if self._text_alignment is None:
+            super().paintEvent(event)
+            painter = QPainter(self)
+        else:
+            option = QStyleOptionComboBox()
+            self.initStyleOption(option)
+            current_text = option.currentText
+            option.currentText = ''
+            painter = QStylePainter(self)
+            painter.drawComplexControl(
+                QStyle.ComplexControl.CC_ComboBox, option
+            )
+            painter.drawControl(
+                QStyle.ControlElement.CE_ComboBoxLabel, option
+            )
+            text_rect = self.style().subControlRect(
+                QStyle.ComplexControl.CC_ComboBox,
+                option,
+                QStyle.SubControl.SC_ComboBoxEditField,
+                self,
+            ).adjusted(2, 0, -2, 0)
+            color_group = (
+                QPalette.ColorGroup.Active
+                if self.isEnabled()
+                else QPalette.ColorGroup.Disabled
+            )
+            color_role = (
+                QPalette.ColorRole.PlaceholderText
+                if self.currentIndex() < 0
+                else QPalette.ColorRole.Text
+            )
+            painter.setPen(option.palette.color(color_group, color_role))
+            painter.drawText(
+                text_rect,
+                self._text_alignment | Qt.AlignmentFlag.AlignVCenter,
+                option.fontMetrics.elidedText(
+                    current_text,
+                    Qt.TextElideMode.ElideRight,
+                    max(0, text_rect.width()),
+                ),
+            )
         pixmap = render_svg_pixmap(
             themed_icon_path('chevron-down.svg'),
             self.ARROW_SIZE,
             self.ARROW_SIZE,
             self.devicePixelRatioF(),
         )
-        x = self.width() - self.ARROW_SIZE - 5
+        x = self.width() - self.ARROW_SIZE - 4
         y = (self.height() - self.ARROW_SIZE) // 2
         painter.drawPixmap(x, y, pixmap)
         painter.end()
@@ -166,69 +239,3 @@ class SizeComboBox(QComboBox):
 
 class SmallSizeComboBox(SizeComboBox):
     pass
-
-
-class FontWeightComboBox(QComboBox):
-    """Compact font-weight picker backed by registry weights.
-
-    The widget keeps display text and stored data identical so command handlers
-    receive normalized OpenType/Qt6-style numeric weights.
-    """
-
-    param_changed = Signal(str, int)
-    STANDARD_WEIGHTS = [100, 200, 300, 400, 500, 600, 700, 800, 900]
-    POPUP_MIN_WIDTH = 70
-
-    def __init__(self, parent: QWidget = None) -> None:
-        super().__init__(parent)
-        self.setFixedWidth(58)
-        self.view().setMinimumWidth(self.POPUP_MIN_WIDTH)
-        self.currentIndexChanged.connect(self._on_index_changed)
-        self.update_weights([])
-
-    def update_weights(self, weights: List[int], selected_weight: int = None):
-        selected_weight = selected_weight if selected_weight is not None else self.current_weight()
-        weights = sorted({int(weight) for weight in weights if weight is not None}) or self.STANDARD_WEIGHTS
-
-        self.blockSignals(True)
-        self.clear()
-        for weight in weights:
-            self.addItem(str(weight), userData=weight)
-        self.blockSignals(False)
-        self.set_weight(selected_weight)
-
-    def set_weight(self, weight: int):
-        if weight is None:
-            weight = 400
-        if self.count() == 0:
-            self.update_weights(self.STANDARD_WEIGHTS, weight)
-            return
-
-        best_index = min(
-            range(self.count()),
-            key=lambda index: (abs((self.itemData(index) or 400) - weight), -(self.itemData(index) or 400)),
-        )
-        self.blockSignals(True)
-        self.setCurrentIndex(best_index)
-        self.blockSignals(False)
-
-    def current_weight(self) -> int:
-        data = self.itemData(self.currentIndex())
-        return int(data) if data is not None else 400
-
-    def weight(self) -> "FontWeight":
-        from ballontranslator.utils.fontformat import FontWeight
-
-        return FontWeight(self.current_weight())
-
-    def _on_index_changed(self):
-        self.param_changed.emit('font_weight', self.current_weight())
-
-    def showPopup(self):
-        # macOS reserves a leading checkmark column in combo popups; keep the
-        # button compact, but give the popup enough room for three-digit weights.
-        self.view().setMinimumWidth(max(self.width(), self.POPUP_MIN_WIDTH))
-        super().showPopup()
-
-    def wheelEvent(self, event):
-        event.ignore()

@@ -115,10 +115,9 @@ class VerticalRomanAlignmentTest(unittest.TestCase):
             orientation,
             0.0,
         ).bounds
-        line_width = item.layout.per_char_records[0][position][
-            'line_width'
-        ]
-        top, bottom = item.layout.y_offset_lst[0][position]
+        cells = item.layout._vertical_line_cells(block, line_number)
+        line_width = item.layout._vertical_line_width(block, line_number)
+        top, bottom = cells[0][2], cells[-1][3]
         return ink, QRectF(line.x(), top, line_width, bottom - top)
 
     @staticmethod
@@ -624,6 +623,48 @@ class VerticalRomanAlignmentTest(unittest.TestCase):
                 self.assertAlmostEqual(
                     ink.center().y(), cell.center().y(), delta=1.0
                 )
+
+    def test_leading_whitespace_does_not_shift_standard_upright_ink(self):
+        def content_ink(item: TextBlkItem, position: int) -> QRectF:
+            block = item.document().firstBlock()
+            line = block.layout().lineForTextPosition(position)
+            placed_line, offset, orientation = (
+                item.layout.vertical_line_placement(
+                    block, line.lineNumber()
+                )
+            )
+            return glyph_geometry(
+                placed_line,
+                position,
+                1,
+                offset,
+                orientation,
+                0.0,
+            ).bounds
+
+        for char in ('i', '。', '啊'):
+            reference = content_ink(self._make_item(char, True), 0)
+            for whitespace in (' ', '\u1680'):
+                # U+1680 is whitespace with a raw outline in the test font,
+                # making accidental whole-line measurement deterministic.
+                for count in (1, 5):
+                    with self.subTest(
+                        char=char,
+                        whitespace=ord(whitespace),
+                        count=count,
+                    ):
+                        item = self._make_item(
+                            whitespace * count + char, True
+                        )
+                        ink = content_ink(item, count)
+                        self.assertAlmostEqual(
+                            ink.center().x(),
+                            reference.center().x(),
+                            delta=1 / 64 + 0.001,
+                        )
+                        self.assertGreater(
+                            ink.center().y(), reference.center().y()
+                        )
 
     def test_small_vertical_ink_shares_exact_column_center(self):
         tolerance = 1 / 64 + 0.001

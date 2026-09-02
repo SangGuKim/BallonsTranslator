@@ -3,12 +3,17 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass, field, replace
 import json
+import logging
 from pathlib import Path
 import struct
 from typing import Any, Dict, Iterable, List, Optional, Set
 
+from .fontformat import FontWeight, font_weight_from_qt
 
-FONT_EXTS = {'.ttf', '.otf', '.ttc', '.pfb'}
+
+LOGGER = logging.getLogger(__name__)
+
+
 NAME_IDS = {
     1: 'family',
     2: 'subfamily',
@@ -66,6 +71,24 @@ WINDOWS_LEGACY_RASTER_FAMILIES = {
     'System',
     'Terminal',
 }
+CANONICAL_FONT_WEIGHTS = {int(weight) for weight in FontWeight}
+_FONT_WEIGHT_SUFFIXES = (
+    ('extra light', 200),
+    ('extra bold', 800),
+    ('semi bold', 600),
+    ('demi bold', 600),
+    ('extralight', 200),
+    ('extrabold', 800),
+    ('semibold', 600),
+    ('demibold', 600),
+    ('regular', 400),
+    ('normal', 400),
+    ('medium', 500),
+    ('light', 300),
+    ('black', 900),
+    ('bold', 700),
+    ('thin', 100),
+)
 
 
 @dataclass
@@ -138,17 +161,68 @@ class FontEntry:
             return self.faces[0]
         return min(weighted, key=lambda face: (abs(face.weight - weight), -face.weight))
 
+    def lookup_keys(self) -> Set[str]:
+        names = {
+            self.canonical_family,
+            self.display_family,
+            self.qt_family,
+            *self.aliases,
+        }
+        for face in self.faces:
+            names.update({
+                face.canonical_family,
+                face.display_family,
+                face.qt_family,
+                *face.aliases,
+            })
+        return {normalize_key(name) for name in names if name}
+
+
+def _weight_family_alias_bases(
+    entries: Iterable[FontEntry],
+) -> Dict[str, str]:
+    """Map redundant weight-family entries to their picker base.
+
+    >>> base = FontEntry('Example', 'Example', 'Example', 'system', weights=[300, 400])
+    >>> light = FontEntry('Example Light', 'Example Light', 'Example Light', 'system', weights=[300])
+    >>> _weight_family_alias_bases([base, light])
+    {'example light': 'example'}
+    """
+    entries = list(entries)
+    by_family = {
+        normalize_key(entry.canonical_family): entry for entry in entries
+    }
+    aliases = {}
+    for entry in entries:
+        folded = entry.canonical_family.casefold()
+        for suffix, weight in _FONT_WEIGHT_SUFFIXES:
+            marker = f' {suffix}'
+            if not folded.endswith(marker):
+                continue
+            base = by_family.get(
+                normalize_key(entry.canonical_family[:-len(marker)])
+            )
+            if (
+                base is not None
+                and weight in base.weights
+                and set(entry.weights) == {weight}
+            ):
+                aliases[normalize_key(entry.canonical_family)] = (
+                    normalize_key(base.canonical_family)
+                )
+            break
+    return aliases
+
 
 @dataclass
 class ResolvedFont:
     """Runtime resolution result for a saved or selected family name.
 
-    >>> result = ResolvedFont('Noto Sans KR', 'Noto Sans KR', 'Noto Sans KR')
+    >>> result = ResolvedFont('Noto Sans KR', 'Noto Sans KR')
     >>> result.qt_family
     'Noto Sans KR'
     """
 
-    requested_family: str
     canonical_family: str
     qt_family: str
     entry: Optional[FontEntry] = None
@@ -168,14 +242,26 @@ class FontRegistry:
     custom_entries: List[FontEntry] = field(default_factory=list)
     system_entries: List[FontEntry] = field(default_factory=list)
     entries_by_key: Dict[str, FontEntry] = field(default_factory=dict)
-    faces_by_key: Dict[str, tuple] = field(default_factory=dict)
+    faces_by_key: Dict[str, tuple[FontEntry, FontFace]] = field(
+        default_factory=dict
+    )
+    export_family_by_key: Dict[str, str] = field(default_factory=dict)
+    _weight_alias_base_by_key: Dict[str, str] = field(
+        default_factory=dict,
+        init=False,
+        repr=False,
+    )
 
-    def __post_init__(self):
-        self.rebuild_index()
+    def __post_init__(self) -> None:
+        self._rebuild_index()
 
-    def rebuild_index(self):
+    def _rebuild_index(self) -> None:
         self.entries_by_key = {}
         self.faces_by_key = {}
+        self._weight_alias_base_by_key = _weight_family_alias_bases(
+            self.system_entries
+        )
+        storage_names_by_qt_key: Dict[str, Set[str]] = defaultdict(set)
         for entry in [*self.system_entries, *self.custom_entries]:
             keys = {entry.canonical_family, entry.display_family, entry.qt_family, *entry.aliases}
             entry_keys = {normalize_key(key) for key in {entry.canonical_family, entry.display_family, entry.qt_family} if key}
@@ -188,6 +274,18 @@ class FontRegistry:
                 for normalized in normalized_face_keys:
                     face_key_counts[normalized] += 1
                 keys.update(face_keys)
+                if face.qt_family:
+                    storage_names_by_qt_key[
+                        normalize_key(face.qt_family)
+                    ].add(
+                        face.storage_family
+                        if entry.is_pseudo_group
+                        else entry.canonical_family
+                    )
+            if not entry.faces and entry.qt_family:
+                storage_names_by_qt_key[
+                    normalize_key(entry.qt_family)
+                ].add(entry.canonical_family)
             for face, normalized_face_keys in face_keys_by_face:
                 for normalized in normalized_face_keys:
                     if normalized not in entry_keys and face_key_counts[normalized] == 1:
@@ -195,71 +293,100 @@ class FontRegistry:
             for key in keys:
                 if key:
                     self.entries_by_key[normalize_key(key)] = entry
+        self.export_family_by_key = {
+            key: next(iter(storage_names))
+            for key, storage_names in storage_names_by_qt_key.items()
+            if len(storage_names) == 1
+        }
 
-    def entries(self, only_custom: bool = False) -> List[FontEntry]:
-        return self.grouped_entries(only_custom)
-
-    def grouped_entries(self, only_custom: bool = False) -> List[FontEntry]:
+    def entries(
+        self,
+        only_custom: bool = False,
+        excluded: Iterable[str] = (),
+    ) -> List[FontEntry]:
         if only_custom:
-            return sorted(self.custom_entries, key=lambda entry: entry.display_family.casefold())
+            entries = list(self.custom_entries)
+        else:
+            custom_keys = {
+                normalize_key(entry.canonical_family)
+                for entry in self.custom_entries
+            }
+            system = [
+                entry for entry in self.system_entries
+                if normalize_key(entry.canonical_family) not in custom_keys
+            ]
+            entries = [*system, *self.custom_entries]
 
-        custom_keys = {normalize_key(entry.canonical_family) for entry in self.custom_entries}
-        system = [entry for entry in self.system_entries if normalize_key(entry.canonical_family) not in custom_keys]
-        return sorted([*system, *self.custom_entries], key=lambda entry: entry.display_family.casefold())
-
-    def separate_face_entries(self, only_custom: bool = False) -> List[FontEntry]:
-        entries = []
-        custom_keys = {normalize_key(entry.canonical_family) for entry in self.custom_entries}
-        system_entries = [entry for entry in self.system_entries if normalize_key(entry.canonical_family) not in custom_keys]
-        source_entries = self.custom_entries if only_custom else [*system_entries, *self.custom_entries]
-        for entry in source_entries:
-            if not entry.faces:
-                entries.append(entry)
+        excluded_keys = {normalize_key(name) for name in excluded}
+        if excluded_keys:
+            entries = [
+                entry for entry in entries
+                if entry.lookup_keys().isdisjoint(excluded_keys)
+            ]
+        visible_by_key = {
+            normalize_key(entry.canonical_family): entry
+            for entry in entries
+        }
+        collapsed = []
+        for entry in entries:
+            base_key = self._weight_alias_base_by_key.get(
+                normalize_key(entry.canonical_family)
+            )
+            base = visible_by_key.get(base_key)
+            if (
+                entry.source == 'system'
+                and base is not None
+                and base.source == 'system'
+            ):
                 continue
-            for face in entry.faces:
-                display_family = face.display_family
-                if normalize_key(display_family) == normalize_key(entry.display_family) and face.style_name:
-                    display_family = f'{display_family} {face.style_name}'
-                entries.append(
-                    FontEntry(
-                        canonical_family=face.storage_family,
-                        display_family=display_family,
-                        qt_family=face.qt_family,
-                        source=entry.source,
-                        file_paths=list(entry.file_paths),
-                        weights=[face.weight] if face.weight is not None else [],
-                        styles=[face.style_name] if face.style_name else [],
-                        faces=[face],
-                        is_scalable=entry.is_scalable,
-                        aliases={alias for alias in {face.canonical_family, face.display_family, face.qt_family, *face.aliases} if alias},
-                        alias_source=entry.alias_source,
-                        warnings=list(entry.warnings),
-                    )
-                )
-        return sorted(entries, key=lambda item: item.display_family.casefold())
+            collapsed.append(entry)
+        return sorted(
+            collapsed,
+            key=lambda entry: entry.display_family.casefold(),
+        )
 
-    def legacy_family_list(self, only_custom: bool = False) -> List[str]:
-        """Return renderable family strings for the old QFontComboBox path."""
-        families = []
-        seen = set()
-        for entry in self.entries(only_custom):
-            family = entry.qt_family or entry.canonical_family
-            key = normalize_key(family)
-            if family and key not in seen:
-                seen.add(key)
-                families.append(family)
-        return families
+    def picker_entry_for_family(self, family: str) -> Optional[FontEntry]:
+        """Resolve a saved family to the entry shown by the picker."""
+        entry = self.entries_by_key.get(normalize_key(family))
+        if entry is None:
+            return None
+        if entry.source != 'system':
+            return entry
+        base_key = self._weight_alias_base_by_key.get(
+            normalize_key(entry.canonical_family)
+        )
+        base = self.entries_by_key.get(base_key)
+        return base if base is not None and base.source == 'system' else entry
 
     def resolve_family(self, family: str, weight: Optional[int] = None) -> ResolvedFont:
         key = normalize_key(family)
         entry = self.entries_by_key.get(key)
         if entry is None:
-            return ResolvedFont(family, family, family)
+            return ResolvedFont(family, family)
         face_match = self.faces_by_key.get(key)
         face = face_match[1] if face_match is not None and face_match[0] is entry else entry.face_for_weight(weight)
         qt_family = face.qt_family if face is not None else entry.qt_family
         canonical = face.storage_family if entry.is_pseudo_group and face is not None else entry.canonical_family
-        return ResolvedFont(family, canonical, qt_family, entry=entry, face=face)
+        return ResolvedFont(canonical, qt_family, entry=entry, face=face)
+
+    def family_for_export(self, family: str) -> str:
+        """Return an unambiguous persisted name for a rendered family."""
+        key = normalize_key(family)
+        storage_family = self.export_family_by_key.get(key)
+        if storage_family is not None:
+            return storage_family
+        face_match = self.faces_by_key.get(key)
+        if face_match is not None:
+            entry, face = face_match
+            return (
+                face.storage_family
+                if entry.is_pseudo_group
+                else entry.canonical_family
+            )
+        entry = self.entries_by_key.get(key)
+        if entry is not None and not entry.is_pseudo_group:
+            return entry.canonical_family
+        return family
 
 
 def normalize_key(value: str) -> str:
@@ -316,7 +443,7 @@ def _sfnt_offsets(data: bytes) -> List[int]:
 
     tag = data[:4]
     if tag == b'ttcf':
-        count = _read_u32(data, 8)
+        count = min(_read_u32(data, 8), (len(data) - 12) // 4)
         offsets = []
         for index in range(count):
             pos = 12 + index * 4
@@ -330,7 +457,11 @@ def _sfnt_offsets(data: bytes) -> List[int]:
     return []
 
 
-def _table_offset(data: bytes, sfnt_offset: int, table_tag: bytes) -> Optional[tuple]:
+def _table_offset(
+    data: bytes,
+    sfnt_offset: int,
+    table_tag: bytes,
+) -> Optional[tuple[int, int]]:
     if sfnt_offset + 12 > len(data):
         return None
     num_tables = _read_u16(data, sfnt_offset + 4)
@@ -519,7 +650,9 @@ def qt_family_weights(qfont_db: Any, family: str) -> List[int]:
     weights = []
     for style in qfont_db.styles(family):
         try:
-            weights.append(int(qfont_db.weight(family, style)))
+            weights.append(
+                int(font_weight_from_qt(qfont_db.weight(family, style)))
+            )
         except Exception:
             continue
     return sorted(set(weights))
@@ -617,46 +750,195 @@ def _candidate_from_parsed_face(
 
 
 def _json_groups(raw: Any, section: str) -> List[Dict[str, Any]]:
-    if isinstance(raw, dict) and section in raw:
-        return raw.get(section, [])
-    return raw.get('groups', raw if isinstance(raw, list) else [])
+    if isinstance(raw, dict):
+        groups = raw.get(section, raw.get('groups', []))
+    elif isinstance(raw, list):
+        groups = raw
+    else:
+        return []
+    return groups if isinstance(groups, list) else []
 
 
-def load_custom_group_table(path: Optional[str]) -> Dict[str, Dict[str, Any]]:
+def ensure_font_registry_overrides(program_path: str) -> Optional[Path]:
+    """Create the editable font registry overrides on first use.
+
+    >>> ensure_font_registry_overrides('/path/that/does/not/exist') is None
+    True
+    """
+
+    root = Path(program_path)
+    target_path = root / 'config' / 'font_registry_overrides.json'
+    if target_path.exists():
+        return target_path
+
+    default_path = root / 'resources' / 'font_registry_overrides.json'
+    try:
+        default_content = default_path.read_text(encoding='utf8')
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        with target_path.open('x', encoding='utf8') as target_file:
+            target_file.write(default_content)
+    except FileExistsError:
+        # Concurrent startup already created the user-owned file.
+        return target_path
+    except OSError as exc:
+        LOGGER.warning(
+            'Failed to create font registry overrides from defaults: %s',
+            exc,
+        )
+        return None
+    return target_path
+
+
+def _load_json_groups(
+    path: Optional[str], section: str
+) -> List[Dict[str, Any]]:
     if not path:
-        return {}
-    raw = json.loads(Path(path).read_text(encoding='utf-8'))
-    groups = _json_groups(raw, 'custom_groups')
+        return []
+    try:
+        raw = json.loads(Path(path).read_text(encoding='utf-8'))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        LOGGER.warning('Ignore invalid font registry %s: %s', path, exc)
+        return []
+    return _json_groups(raw, section)
+
+
+def _localized_config_display(
+    value: Any, canonical: str, locale: str
+) -> str:
+    if not isinstance(value, dict):
+        return value if isinstance(value, str) and value else canonical
+    normalized_locale = locale.replace('_', '-').casefold()
+    language = normalized_locale.split('-', 1)[0]
+    by_locale = {
+        key.replace('_', '-').casefold(): text
+        for key, text in value.items()
+        if isinstance(key, str) and isinstance(text, str) and text
+    }
+    return (
+        by_locale.get(normalized_locale)
+        or by_locale.get(language)
+        or by_locale.get('default')
+        or canonical
+    )
+
+
+def _config_name(value: Any) -> Optional[str]:
+    return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+def _config_aliases(value: Any, context: str) -> List[str]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        LOGGER.warning('Ignore invalid aliases for %s: %r', context, value)
+        return []
+    aliases = []
+    for alias in value:
+        name = _config_name(alias)
+        if name is None:
+            LOGGER.warning('Ignore invalid font alias for %s: %r', context, alias)
+        else:
+            aliases.append(name)
+    return aliases
+
+
+def load_custom_group_table(
+    path: Optional[str], locale: str = 'en-US'
+) -> Dict[str, Dict[str, Any]]:
     table = {}
-    for group in groups:
-        canonical = group['canonical']
-        display = group.get('display', canonical)
+    for group in _load_json_groups(path, 'custom_groups'):
+        canonical = (
+            _config_name(group.get('canonical'))
+            if isinstance(group, dict) else None
+        )
+        if canonical is None:
+            LOGGER.warning('Ignore invalid custom font group: %r', group)
+            continue
+        display = _localized_config_display(
+            group.get('display'), canonical, locale
+        )
         members = group.get('members', [])
+        if not isinstance(members, list):
+            LOGGER.warning('Ignore invalid members for font group %s', canonical)
+            continue
         normalized_group = {
             'canonical': canonical,
             'display': display,
-            'members': members,
+            'members': [],
             'note': group.get('note', ''),
         }
         for member in members:
-            member_names = [member['canonical'], *member.get('aliases', [])]
+            member_canonical = (
+                _config_name(member.get('canonical'))
+                if isinstance(member, dict) else None
+            )
+            if member_canonical is None:
+                LOGGER.warning(
+                    'Ignore invalid member in font group %s: %r',
+                    canonical,
+                    member,
+                )
+                continue
+            member = dict(member)
+            member['canonical'] = member_canonical
+            member['display'] = _localized_config_display(
+                member.get('display'), member_canonical, locale
+            )
+            member['aliases'] = _config_aliases(
+                member.get('aliases'), member_canonical
+            )
+            weight = member.get('weight')
+            if weight is not None and (
+                isinstance(weight, bool)
+                or not isinstance(weight, int)
+                or weight not in CANONICAL_FONT_WEIGHTS
+            ):
+                LOGGER.warning(
+                    'Ignore invalid weight for font group member %s: %r',
+                    member_canonical,
+                    weight,
+                )
+                member.pop('weight', None)
+            style = member.get('style')
+            if style is not None:
+                style = _config_name(style)
+                if style is None:
+                    LOGGER.warning(
+                        'Ignore invalid style for font group member %s: %r',
+                        member_canonical,
+                        member.get('style'),
+                    )
+                    member.pop('style', None)
+                else:
+                    member['style'] = style
+            normalized_group['members'].append(member)
+            member_names = [member_canonical, *member['aliases']]
             for name in member_names:
                 table[normalize_key(name)] = {**normalized_group, 'member': member}
     return table
 
 
-def load_system_alias_table(path: Optional[str]) -> Dict[str, Dict[str, Any]]:
-    if not path:
-        return {}
-    raw = json.loads(Path(path).read_text(encoding='utf-8'))
-    groups = _json_groups(raw, 'system_aliases')
+def load_system_alias_table(
+    path: Optional[str], locale: str = 'en-US'
+) -> Dict[str, Dict[str, Any]]:
     table = {}
-    for group in groups:
-        canonical = group['canonical']
-        aliases = [canonical, *group.get('aliases', [])]
+    for group in _load_json_groups(path, 'system_aliases'):
+        canonical = (
+            _config_name(group.get('canonical'))
+            if isinstance(group, dict) else None
+        )
+        if canonical is None:
+            LOGGER.warning('Ignore invalid system font alias: %r', group)
+            continue
+        aliases = [
+            canonical,
+            *_config_aliases(group.get('aliases'), canonical),
+        ]
         normalized_group = {
             'canonical': canonical,
-            'display': group.get('display', canonical),
+            'display': _localized_config_display(
+                group.get('display'), canonical, locale
+            ),
             'aliases': aliases,
             'note': group.get('note', ''),
         }
@@ -669,16 +951,31 @@ def collect_custom_faces(font_paths: Iterable[str], qfont_db: Any, locale: str) 
     faces = []
     for font_path_str in font_paths:
         font_path = Path(font_path_str).resolve()
+        if font_path.name.startswith('._'):
+            # macOS AppleDouble sidecars mirror the extension of the real font
+            # but contain only Finder metadata and can never be registered.
+            continue
         font_id = qfont_db.addApplicationFont(str(font_path))
         qt_families = [
             family.strip()
             for family in (qfont_db.applicationFontFamilies(font_id) if font_id >= 0 else [])
             if family and family.strip()
         ]
+        if font_id < 0 or not qt_families:
+            LOGGER.warning('Unable to register custom font %s', font_path)
+            continue
         try:
             parsed_faces = parse_font_names(font_path)
         except Exception as exc:
             parsed_faces = [{'face_index': 0, 'error': repr(exc), 'names': []}]
+        if not parsed_faces:
+            # Type 1 and other Qt-supported formats do not expose SFNT name
+            # tables, but a successfully registered family is still usable.
+            parsed_faces = [{
+                'face_index': 0,
+                'error': 'unsupported font metadata format',
+                'names': [],
+            }]
         for parsed_face in parsed_faces:
             candidate = _candidate_from_parsed_face(font_path, parsed_face, qt_families, qfont_db, locale)
             if candidate is not None:
@@ -794,7 +1091,10 @@ def build_custom_entries(faces: List[FontFace], custom_group_table: Optional[Dic
 
 def _system_entry(qfont_db: Any, family: str) -> FontEntry:
     styles = sorted(qfont_db.styles(family), key=str.casefold)
-    weights = sorted({int(qfont_db.weight(family, style)) for style in styles})
+    weights = sorted({
+        int(font_weight_from_qt(qfont_db.weight(family, style)))
+        for style in styles
+    })
     scalable = any(qfont_db.isScalable(family, style) for style in styles) if styles else qfont_db.isScalable(family)
     warnings = []
     if family in WINDOWS_LEGACY_RASTER_FAMILIES:
@@ -807,7 +1107,9 @@ def _system_entry(qfont_db: Any, family: str) -> FontEntry:
             display_family=family,
             qt_family=family,
             style_name=style,
-            weight=int(qfont_db.weight(family, style)),
+            weight=int(
+                font_weight_from_qt(qfont_db.weight(family, style))
+            ),
             aliases={family},
         )
         for style in styles
@@ -880,14 +1182,14 @@ def build_font_registry(
     font_paths: Iterable[str],
     system_families: Iterable[str],
     locale: str = 'en-US',
-    font_registry_config_path: Optional[str] = None,
-    custom_group_table_path: Optional[str] = None,
-    system_alias_table_path: Optional[str] = None,
+    font_registry_path: Optional[str] = None,
 ) -> FontRegistry:
-    custom_group_table = load_custom_group_table(font_registry_config_path)
-    custom_group_table.update(load_custom_group_table(custom_group_table_path))
-    system_alias_table = load_system_alias_table(font_registry_config_path)
-    system_alias_table.update(load_system_alias_table(system_alias_table_path))
+    custom_group_table = load_custom_group_table(
+        font_registry_path, locale
+    )
+    system_alias_table = load_system_alias_table(
+        font_registry_path, locale
+    )
     custom_faces = collect_custom_faces(font_paths, qfont_db, locale)
     custom_entries = build_custom_entries(custom_faces, custom_group_table)
     system_entries = [_system_entry(qfont_db, family) for family in sorted(system_families, key=str.casefold)]

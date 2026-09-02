@@ -168,9 +168,15 @@ def imread(imgpath, read_type=cv2.IMREAD_COLOR, max_retry_limit=5, retry_interva
             elif img.mode == 'LA':
                 # grayscale + alpha (2-channel) isn't handled below; promote to RGBA
                 img = img.convert('RGBA')
+            elif img.mode == '1':
+                img = img.convert('RGBA' if 'transparency' in img.info else 'RGB')
             if read_type == cv2.IMREAD_GRAYSCALE:
                 img = img.convert('L')
             img = np.array(img)
+            if img.dtype == np.uint16:
+                # Canvas and model inputs use 8-bit channels; keep the high byte
+                # so 16-bit PNG tones retain their full-range visual mapping.
+                img = (img >> 8).astype(np.uint8)
             if read_type != cv2.IMREAD_GRAYSCALE:
                 if img.ndim == 3 and img.shape[-1] == 1:
                     img = img[..., :2]
