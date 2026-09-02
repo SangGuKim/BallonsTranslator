@@ -69,6 +69,7 @@ class DrawingBrushSizeTest(unittest.TestCase):
 
         self.assertEqual(panel.dilateSpinBox.value(), 17)
         self.assertEqual(panel.dilate_slider.value(), 17)
+        self.assertFalse(panel.dilate_slider.show_hover_value)
 
 
 if __name__ == '__main__':

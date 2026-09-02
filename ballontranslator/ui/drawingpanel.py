@@ -301,6 +301,7 @@ class RectPanel(Widget):
         self.dilate_label = ToolNameLabel(100, self.tr('Dilate'))
         self.dilate_slider = PaintQSlider()
         self.dilate_slider.setRange(0, 100)
+        self.dilate_slider.show_hover_value = False
         self.dilate_slider.valueChanged.connect(self.dilate_ksize_changed)
         self.dilateSpinBox = QSpinBox(self)
         self.dilateSpinBox.setProperty('paintSliderValueEditor', True)
