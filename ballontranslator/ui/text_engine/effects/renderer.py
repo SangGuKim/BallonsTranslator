@@ -1824,7 +1824,9 @@ class TextEffectRenderer:
         return context
 
     def _synthetic_bold_ratios(self) -> Tuple[float, float]:
-        values = self.fontformat.synthetic_bold_offsets
+        if not self.fontformat.synthetic_bold:
+            return 0.0, 0.0
+        values = self.fontformat.synthetic_bold_offset
         return (
             min(max(float(values[0]), 0.0), 0.2),
             min(max(float(values[1]), 0.0), 0.2),

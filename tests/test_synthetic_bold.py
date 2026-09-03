@@ -34,13 +34,14 @@ class SyntheticBoldTest(unittest.TestCase):
         block.fontformat.font_size = 48
         block.fontformat.letter_spacing = 1.0
         if mode == 'horizontal':
-            block.fontformat.synthetic_bold_offsets = [offset_ratio, 0.0]
+            block.fontformat.synthetic_bold_offset = [offset_ratio, 0.0]
         elif mode == 'vertical':
-            block.fontformat.synthetic_bold_offsets = [0.0, offset_ratio]
+            block.fontformat.synthetic_bold_offset = [0.0, offset_ratio]
         else:
-            block.fontformat.synthetic_bold_offsets = [
+            block.fontformat.synthetic_bold_offset = [
                 offset_ratio, offset_ratio
             ]
+        block.fontformat.synthetic_bold = offset_ratio > 0.0
         item = TextBlkItem(block, 0)
         scene = QGraphicsScene()
         scene.addItem(item)
@@ -86,7 +87,8 @@ class SyntheticBoldTest(unittest.TestCase):
         block.fontformat.frgb = [255, 255, 255]
         block.fontformat.srgb = [255, 0, 0]
         block.fontformat.stroke_width = 0.08
-        block.fontformat.synthetic_bold_offsets = list(offsets)
+        block.fontformat.synthetic_bold = any(value > 0.0 for value in offsets)
+        block.fontformat.synthetic_bold_offset = list(offsets)
         item = TextBlkItem(block, 0)
         scene = QGraphicsScene()
         scene.addItem(item)
@@ -135,19 +137,33 @@ class SyntheticBoldTest(unittest.TestCase):
 
     def test_offset_is_clamped_to_the_supported_range(self) -> None:
         self.assertEqual(
-            TextBlock([0, 0, 1, 1]).fontformat.synthetic_bold_offsets,
-            [0.0, 0.0],
+            TextBlock([0, 0, 1, 1]).fontformat.synthetic_bold_offset,
+            [0.01, 0.01],
         )
-        font_format = FontFormat(synthetic_bold_offsets=[9.0, -1.0])
-        self.assertEqual(font_format.synthetic_bold_offsets, [0.2, 0.2])
+        font_format = FontFormat(synthetic_bold_offset=[9.0, -1.0])
+        self.assertEqual(font_format.synthetic_bold_offset, [0.2, 0.0])
 
-    def test_legacy_single_offset_and_direction_are_migrated(self) -> None:
-        horizontal = FontFormat(
-            synthetic_bold=0.05,
-            synthetic_bold_mode='horizontal',
+    def test_equal_offsets_serialize_as_one_value(self) -> None:
+        uniform = FontFormat(
+            synthetic_bold=True,
+            synthetic_bold_offset=[0.01, 0.01],
         )
-        self.assertEqual(horizontal.synthetic_bold_offsets, [0.05, 0.0])
-        self.assertFalse(horizontal.synthetic_bold_linked)
+        directional = FontFormat(synthetic_bold_offset=[0.02, 0.01])
+
+        self.assertTrue(uniform.to_serializable_dict()['synthetic_bold'])
+        self.assertEqual(
+            uniform.to_serializable_dict()['synthetic_bold_offset'], 0.01
+        )
+        self.assertEqual(
+            directional.to_serializable_dict()['synthetic_bold_offset'],
+            [0.02, 0.01],
+        )
+
+    def test_default_offset_is_one_percent_and_disabled(self) -> None:
+        font_format = FontFormat()
+
+        self.assertFalse(font_format.synthetic_bold)
+        self.assertEqual(font_format.synthetic_bold_offset, [0.01, 0.01])
 
     def test_uniform_offset_expands_vertical_ink_too(self) -> None:
         regular, _padding = self._render(0.0, 'uniform')
@@ -172,7 +188,8 @@ class SyntheticBoldTest(unittest.TestCase):
         block._bounding_rect = [0, 0, 180, 100]
         block.translation = 'HH'
         block.fontformat.font_size = 48
-        block.fontformat.synthetic_bold_offsets = [0.2, 0.0]
+        block.fontformat.synthetic_bold = True
+        block.fontformat.synthetic_bold_offset = [0.2, 0.0]
         item = TextBlkItem(block, 0)
         renderer = item.effect_renderer
         renderer.release_caches()
@@ -230,7 +247,8 @@ class SyntheticBoldTest(unittest.TestCase):
         block.translation = 'HH'
         block.fontformat.font_size = 48
         block.fontformat.stroke_width = 0.08
-        block.fontformat.synthetic_bold_offsets = [0.05, 0.05]
+        block.fontformat.synthetic_bold = True
+        block.fontformat.synthetic_bold_offset = [0.05, 0.05]
         item = TextBlkItem(block, 0)
         renderer = item.effect_renderer
         rect = renderer.boundingRect()
@@ -257,42 +275,44 @@ class SyntheticBoldTest(unittest.TestCase):
         self.assertEqual(paint_stroke_core.call_count, 1)
         self.assertEqual(dilate.call_count, 1)
 
-    def test_bold_menu_switches_between_linked_and_xy_offsets(self) -> None:
+    def test_xy_offsets_are_edited_independently(self) -> None:
         button = BoldToolButton()
-        linked_states = []
         offsets = []
-        button.synthetic_bold_linked_changed.connect(linked_states.append)
-        button.synthetic_bold_offsets_changed.connect(offsets.append)
+        button.synthetic_bold_offset_changed.connect(offsets.append)
 
-        button.synthetic_bold_linked.setChecked(False)
-        button.synthetic_bold_x_box.setValue(0.05)
+        button.synthetic_bold_x_box.setValue(5)
         button.synthetic_bold_x_box.param_changed.emit(
-            'synthetic_bold_x_offset', 0.05
+            'synthetic_bold_x_offset', 5
         )
-        button.synthetic_bold_y_box.setValue(0.02)
+        button.synthetic_bold_y_box.setValue(2)
         button.synthetic_bold_y_box.param_changed.emit(
-            'synthetic_bold_y_offset', 0.02
+            'synthetic_bold_y_offset', 2
         )
 
-        self.assertEqual(linked_states, [False])
-        self.assertTrue(button._linked_offset_row.isHidden())
-        self.assertFalse(button._separate_offset_row.isHidden())
+        self.assertEqual(button.synthetic_bold_x_box.value(), 5)
+        self.assertEqual(button.synthetic_bold_y_box.value(), 2)
         self.assertEqual(offsets[-1], (0.05, 0.02))
 
-    def test_bold_menu_keeps_toggle_and_offsets_as_separate_actions(self) -> None:
+    def test_bold_button_reflects_offsets_without_changing_them(self) -> None:
         button = BoldToolButton()
         offsets = []
-        toggles = []
-        button.synthetic_bold_offsets_changed.connect(offsets.append)
-        button.bold_requested.connect(lambda: toggles.append(True))
+        button.synthetic_bold_offset_changed.connect(offsets.append)
+        button.set_synthetic_bold(True, (0.01, 0.02))
 
-        button.synthetic_bold_box.param_changed.emit(
-            'synthetic_bold_linked_offset', 0.05
-        )
+        self.assertTrue(button.isChecked())
+        self.assertEqual(button.synthetic_bold_x_box.value(), 1)
+        self.assertEqual(button.synthetic_bold_y_box.value(), 2)
+        self.assertEqual(offsets, [])
+
+    def test_bold_button_applies_and_clears_the_current_offsets(self) -> None:
+        button = BoldToolButton()
+        enabled = []
+        button.synthetic_bold_changed.connect(enabled.append)
+
+        button.click()
         button.click()
 
-        self.assertEqual(offsets, [(0.05, 0.05)])
-        self.assertEqual(toggles, [True])
+        self.assertEqual(enabled, [True, False])
 
 
 if __name__ == '__main__':

@@ -2058,7 +2058,7 @@ class TextBlkItem(QGraphicsTextItem):
             cursor, False, restore_cursor, **after_kwargs
         )
 
-    def setSyntheticBoldOffsets(
+    def setSyntheticBoldOffset(
         self, offsets: Tuple[float, float]
     ) -> None:
         """Set em-relative canonical glyph contour offsets."""
@@ -2067,15 +2067,18 @@ class TextBlkItem(QGraphicsTextItem):
             min(max(float(x_offset), 0.0), 0.2),
             min(max(float(y_offset), 0.0), 0.2),
         ]
-        if self.fontformat.synthetic_bold_offsets == target:
+        if self.fontformat.synthetic_bold_offset == target:
             return
-        self.fontformat.synthetic_bold_offsets = target
+        self.fontformat.synthetic_bold_offset = target
         self.effect_renderer.synthetic_bold_changed()
 
-    def setSyntheticBoldLinked(self, linked: bool) -> None:
-        """Persist whether the UI edits both contour axes together."""
-        self.fontformat.synthetic_bold_linked = bool(linked)
-        self.update()
+    def setSyntheticBold(self, enabled: bool) -> None:
+        """Enable or disable the configured synthetic-bold contour."""
+        enabled = bool(enabled)
+        if self.fontformat.synthetic_bold == enabled:
+            return
+        self.fontformat.synthetic_bold = enabled
+        self.effect_renderer.synthetic_bold_changed()
 
     def setRelFontSize(
         self,

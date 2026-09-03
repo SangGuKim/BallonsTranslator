@@ -365,11 +365,10 @@ class EmphasisToolButton(QToolButton):
 
 
 class BoldToolButton(QToolButton):
-    """Toggle bold and edit the canonical synthetic-bold contour."""
+    """Toggle and edit the canonical synthetic-bold contour."""
 
-    bold_requested = Signal()
-    synthetic_bold_offsets_changed = Signal(object)
-    synthetic_bold_linked_changed = Signal(bool)
+    synthetic_bold_changed = Signal(bool)
+    synthetic_bold_offset_changed = Signal(object)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -392,23 +391,6 @@ class BoldToolButton(QToolButton):
         offset_layout = QVBoxLayout(offset_row)
         offset_layout.setContentsMargins(8, 1, 6, 3)
         offset_layout.setSpacing(1)
-        self.synthetic_bold_linked = QCheckBox(
-            self.tr('Same X/Y offset'), offset_row
-        )
-        self.synthetic_bold_linked.setObjectName(
-            'SyntheticBoldLinkedCheckBox'
-        )
-        self.synthetic_bold_linked.setChecked(True)
-        offset_layout.addWidget(self.synthetic_bold_linked)
-
-        self.synthetic_bold_box = self._new_offset_box(
-            'synthetic_bold_linked_offset', offset_row
-        )
-        self._linked_offset_row = self._offset_editor_row(
-            self.tr('Offset (em)'), self.synthetic_bold_box, offset_row
-        )
-        offset_layout.addWidget(self._linked_offset_row)
-
         self.synthetic_bold_x_box = self._new_offset_box(
             'synthetic_bold_x_offset', offset_row
         )
@@ -424,15 +406,8 @@ class BoldToolButton(QToolButton):
         separate_layout.addSpacing(4)
         separate_layout.addWidget(QLabel('Y', self._separate_offset_row))
         separate_layout.addWidget(self.synthetic_bold_y_box)
-        self._separate_offset_row.hide()
         offset_layout.addWidget(self._separate_offset_row)
 
-        self.synthetic_bold_linked.toggled.connect(
-            self._on_synthetic_bold_linked_changed
-        )
-        self.synthetic_bold_box.param_changed.connect(
-            self._on_linked_offset_changed
-        )
         self.synthetic_bold_x_box.param_changed.connect(
             self._on_separate_offset_changed
         )
@@ -449,79 +424,49 @@ class BoldToolButton(QToolButton):
         self._active_icon_path = str(icons / 'fontfmt_bold_activate.svg')
 
     def _new_offset_box(self, param_name: str, parent: QWidget) -> SizeComboBox:
-        box = SizeComboBox([0.0, 0.2], param_name, parent)
+        box = SizeComboBox([0.0, 20.0], param_name, parent)
         box.setObjectName('SyntheticBoldOffsetBox')
-        box.addItems(['0.0', '0.01', '0.02', '0.03', '0.04', '0.05'])
+        box.addItems(['0', '1', '2', '3', '4', '5'])
         box.setFixedSize(50, 20)
         box.setToolTip(
-            self.tr('Outward glyph contour offset relative to em size')
+            self.tr(
+                'Outward contour expansion as a percentage of font size; '
+                'independent X/Y expansion uses the largest rich-text size'
+            )
         )
         return box
 
-    def _offset_editor_row(
-        self, label_text: str, editor: SizeComboBox, parent: QWidget
-    ) -> QWidget:
-        row = QWidget(parent)
-        layout = QHBoxLayout(row)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(6)
-        label = QLabel(label_text, row)
-        label.setObjectName('SyntheticBoldEditorLabel')
-        layout.addWidget(label)
-        layout.addStretch(1)
-        layout.addWidget(editor)
-        return row
-
-    def _on_main_clicked(self, _checked: bool = False) -> None:
-        self.bold_requested.emit()
-
-    def _on_linked_offset_changed(
-        self, _param_name: str, value: float
-    ) -> None:
-        with QSignalBlocker(self.synthetic_bold_x_box):
-            self.synthetic_bold_x_box.setValue(value)
-        with QSignalBlocker(self.synthetic_bold_y_box):
-            self.synthetic_bold_y_box.setValue(value)
-        self.synthetic_bold_offsets_changed.emit((value, value))
+    def _on_main_clicked(self, checked: bool = False) -> None:
+        self.synthetic_bold_changed.emit(checked)
 
     def _on_separate_offset_changed(
         self, _param_name: str, _value: float
     ) -> None:
-        self.synthetic_bold_offsets_changed.emit((
-            self.synthetic_bold_x_box.value(),
-            self.synthetic_bold_y_box.value(),
-        ))
-
-    def _on_synthetic_bold_linked_changed(self, linked: bool) -> None:
-        self._linked_offset_row.setVisible(linked)
-        self._separate_offset_row.setVisible(not linked)
-        if linked:
-            value = max(
-                self.synthetic_bold_x_box.value(),
-                self.synthetic_bold_y_box.value(),
-            )
-            with QSignalBlocker(self.synthetic_bold_box):
-                self.synthetic_bold_box.setValue(value)
-            self._on_linked_offset_changed('', value)
-        self.synthetic_bold_linked_changed.emit(linked)
-        self._menu.adjustSize()
+        offsets = (
+            self.synthetic_bold_x_box.value() / 100.0,
+            self.synthetic_bold_y_box.value() / 100.0,
+        )
+        enabled = any(value > 0.0 for value in offsets)
+        changed = self.isChecked() != enabled
+        with QSignalBlocker(self):
+            self.setChecked(enabled)
+        self.synthetic_bold_offset_changed.emit(offsets)
+        if changed:
+            self.synthetic_bold_changed.emit(enabled)
 
     def set_synthetic_bold(
-        self, offsets: Iterable[float], linked: bool
+        self, enabled: bool, offsets: Iterable[float]
     ) -> None:
         x_offset, y_offset = (float(value) for value in offsets)
+        with QSignalBlocker(self):
+            self.setChecked(enabled and (x_offset > 0.0 or y_offset > 0.0))
         for editor, value in (
             (self.synthetic_bold_x_box, x_offset),
             (self.synthetic_bold_y_box, y_offset),
-            (self.synthetic_bold_box, max(x_offset, y_offset)),
         ):
             if not editor.hasFocus():
                 with QSignalBlocker(editor):
-                    editor.setValue(value)
-        with QSignalBlocker(self.synthetic_bold_linked):
-            self.synthetic_bold_linked.setChecked(linked)
-        self._linked_offset_row.setVisible(linked)
-        self._separate_offset_row.setVisible(not linked)
+                    editor.setValue(value * 100.0)
 
     def paintEvent(self, event) -> None:
         super().paintEvent(event)
@@ -565,19 +510,17 @@ class BoldToolButton(QToolButton):
 
 class FormatGroupBtn(QFrame):
     param_changed = Signal(str, bool)
-    bold_requested = Signal()
-    synthetic_bold_offsets_changed = Signal(object)
-    synthetic_bold_linked_changed = Signal(bool)
+    synthetic_bold_changed = Signal(bool)
+    synthetic_bold_offset_changed = Signal(object)
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.boldBtn = BoldToolButton(self)
-        self.boldBtn.bold_requested.connect(self.bold_requested)
-        self.boldBtn.synthetic_bold_offsets_changed.connect(
-            self.synthetic_bold_offsets_changed
+        self.boldBtn.synthetic_bold_changed.connect(
+            self.synthetic_bold_changed
         )
-        self.boldBtn.synthetic_bold_linked_changed.connect(
-            self.synthetic_bold_linked_changed
+        self.boldBtn.synthetic_bold_offset_changed.connect(
+            self.synthetic_bold_offset_changed
         )
         self.italicBtn = QFontChecker(self)
         self.italicBtn.setObjectName("FontItalicChecker")
@@ -945,12 +888,11 @@ class FontFormatPanel(Widget):
 
         self.formatBtnGroup = FormatGroupBtn(self)
         self.formatBtnGroup.param_changed.connect(self.on_param_changed)
-        self.formatBtnGroup.bold_requested.connect(self.toggle_bold)
-        self.formatBtnGroup.synthetic_bold_offsets_changed.connect(
-            self.on_synthetic_bold_offsets_changed
+        self.formatBtnGroup.synthetic_bold_changed.connect(
+            self.on_synthetic_bold_changed
         )
-        self.formatBtnGroup.synthetic_bold_linked_changed.connect(
-            self.on_synthetic_bold_linked_changed
+        self.formatBtnGroup.synthetic_bold_offset_changed.connect(
+            self.on_synthetic_bold_offset_changed
         )
 
         self.verticalChecker = QFontChecker(self)
@@ -1150,22 +1092,15 @@ class FontFormatPanel(Widget):
     ) -> None:
         self._apply_font_weight(coerce_font_weight(int(weight)))
 
-    def toggle_bold(self) -> None:
-        current_weight = FontWeight(C.active_format.font_weight)
-        weight = (
-            FontWeight.Normal
-            if current_weight >= FontWeight.DemiBold
-            else FontWeight.Bold
-        )
-        self._apply_font_weight(weight)
+    def on_synthetic_bold_changed(
+        self, enabled: bool
+    ) -> None:
+        self.on_param_changed('synthetic_bold', enabled)
 
-    def on_synthetic_bold_offsets_changed(
+    def on_synthetic_bold_offset_changed(
         self, offsets: tuple[float, float]
     ) -> None:
-        self.on_param_changed('synthetic_bold_offsets', list(offsets))
-
-    def on_synthetic_bold_linked_changed(self, linked: bool) -> None:
-        self.on_param_changed('synthetic_bold_linked', linked)
+        self.on_param_changed('synthetic_bold_offset', list(offsets))
 
     def _apply_font_weight(self, weight: FontWeight) -> None:
         storage_family = (
@@ -1426,12 +1361,9 @@ class FontFormatPanel(Widget):
                 self.letterSpacingBox.setValue(font_format.letter_spacing)
         self.formatBtnGroup.underlineBtn.setChecked(font_format.underline)
         self.formatBtnGroup.italicBtn.setChecked(font_format.italic)
-        self.formatBtnGroup.boldBtn.setChecked(
-            font_format.font_weight >= FontWeight.DemiBold
-        )
         self.formatBtnGroup.boldBtn.set_synthetic_bold(
-            font_format.synthetic_bold_offsets,
-            font_format.synthetic_bold_linked,
+            font_format.synthetic_bold,
+            font_format.synthetic_bold_offset,
         )
         self.textadvancedfmt_panel.set_line_spacing_type(
             font_format.line_spacing_type
