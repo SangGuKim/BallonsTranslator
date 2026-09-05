@@ -845,11 +845,6 @@
         <source>Max spelling difference in letters. Higher values search deeper but perform slower.</source>
         <translation>A betűk közötti maximális eltérés. A magasabb értékeknél a keresés alaposabb, de lassabb.</translation>
     </message>
-    <message>
-        <location filename="../../ballontranslator/ui/configpanel.py" line="733"/>
-        <source>Group font weights by family</source>
-        <translation>Betűvastagságok csoportosítása család szerint</translation>
-    </message>
 </context>
 <context>
     <name>DialogCloseButton</name>
@@ -1212,16 +1207,6 @@
         <location filename="../../ballontranslator/ui/text_panel.py" line="371"/>
         <source>Translation</source>
         <translation>Fordítás</translation>
-    </message>
-    <message>
-        <location filename="../../ballontranslator/ui/text_engine/formatting/panel.py" line="1238"/>
-        <source>Text Blocks</source>
-        <translation>Szövegblokkok</translation>
-    </message>
-    <message>
-        <location filename="../../ballontranslator/ui/text_engine/formatting/panel.py" line="1240"/>
-        <source>Text Blocks {indexes}</source>
-        <translation>Szövegblokkok {indexes}</translation>
     </message>
     <message>
         <location filename="../../ballontranslator/ui/text_engine/formatting/panel.py" line="738"/>

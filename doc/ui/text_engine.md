@@ -66,10 +66,12 @@ overrides take precedence. Autocomplete uses canonical names and already
 resolved labels without opening every system font. Display aliases
 must never replace existing saved-name mappings or change exported family names.
 
-Synthetic bold remains a `FontFormat` property rather than an effect card. It
-expands the canonical glyph contour on the requested X/Y axes before Stroke,
-Shadow, Glow, Filter, mask, and transform processing, without changing layout
-metrics or the selected font face.
+Synthetic Bold belongs to `FontFormat.synthetic_bold`, not the effect stack.
+Its `none`, `rect`, and `ellipse` modes use `synthetic_bold_offset` for independent
+X/Y expansion from 0% to 50% of the font size. Rectangle uses separate axis
+passes; Ellipse uses an elliptical footprint, with a circular outline for equal
+offsets. Expansion applies to canonical glyph contours before Stroke, Shadow,
+Glow, Filter, masks, and transforms, preserving layout metrics and font family.
 
 ## Rich text and CSS extensions
 
