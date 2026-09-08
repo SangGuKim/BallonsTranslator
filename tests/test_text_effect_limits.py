@@ -11,7 +11,6 @@ from qtpy.QtGui import QColor, QImage, QPainter
 from qtpy.QtWidgets import QApplication
 
 from ballontranslator.ui.misc import pixmap2ndarray
-from ballontranslator.ui.text_engine.effects.limits import limit_effect_radii
 from ballontranslator.ui.text_engine.effects.shadow import _blur
 from ballontranslator.ui.text_engine.item import TextBlkItem
 from ballontranslator.ui.text_engine.rendering.morphology import dilate_alpha_disc
@@ -20,7 +19,7 @@ from ballontranslator.ui.text_engine.rendering.raster import (
 )
 from ballontranslator.utils.textblock import TextBlock
 from ballontranslator.utils.text_effects import (
-    GlowEffect, ShadowEffect, StrokeEffect, TextEffectStack,
+    ShadowEffect, StrokeEffect, TextEffect, TextEffectStack,
 )
 
 
@@ -42,13 +41,16 @@ class EffectRadiusTest(unittest.TestCase):
     def test_large_blur_keeps_kernel_extent_and_alpha_precision(self) -> None:
         mask = np.zeros((181, 203), dtype=np.uint8)
         mask[40:110, 30:150] = 100
-        for radius in (25, 64):
+        for radius in (25, 32, 64, 128):
             expected = cv2.GaussianBlur(
                 mask, (2 * radius + 1, 2 * radius + 1), (2 * radius + 1) / 6,
                 borderType=cv2.BORDER_CONSTANT,
             )
             actual = _blur(mask, radius)
-            self.assertLessEqual(int(np.abs(actual.astype(int) - expected.astype(int)).max()), 2)
+            self.assertLessEqual(
+                int(np.abs(actual.astype(int) - expected.astype(int)).max()),
+                0 if radius <= 32 else 2,
+            )
             self.assertLessEqual(int(actual.max()), 100)
 
     def test_disc_preserves_clipped_spans_and_strided_alpha(self) -> None:
@@ -65,46 +67,24 @@ class EffectRadiusTest(unittest.TestCase):
                     ))
                     np.testing.assert_array_equal(dilate_alpha_disc(alpha, radius), expected)
 
-    def test_spread_saturates_without_changing_saved_values_or_offset(self) -> None:
-        stack = TextEffectStack(effects=(ShadowEffect(
-            distance=0.2, blur=0.1, spread=10.0,
-        ),))
-        limited = limit_effect_radii(stack, 200.0, 500.0)
-        effect = limited.effects[0]
-        self.assertEqual(effect.distance, 0.2)
-        self.assertEqual(effect.blur, 0.1)
-        self.assertAlmostEqual(effect.spread, 2.2)
-        self.assertEqual(stack.effects[0].spread, 10.0)
-        larger_font = limit_effect_radii(stack, 400.0, 500.0).effects[0]
-        self.assertLess(larger_font.spread, effect.spread)
-
-    def test_generated_reaches_share_stroke_budget(self) -> None:
-        stack = TextEffectStack(effects=(
-            ShadowEffect(spread=10.0, blur=0.2, distance=0.1),
-            GlowEffect(size=0.2, spread=10.0),
-            StrokeEffect(width=2.0),
-        ))
-        shadow, glow, stroke = limit_effect_radii(stack, 200.0, 500.0).effects
-        self.assertLessEqual(stroke.width / 2 + shadow.distance + shadow.blur + shadow.spread, 2.5)
-        self.assertLessEqual(stroke.width / 2 + glow.size + glow.spread, 2.5)
-
-
 class BoundedEffectRendererTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.app = QApplication.instance() or QApplication([])
 
     @staticmethod
-    def _item(effect) -> TextBlkItem:
-        block = TextBlock([0, 0, 1800, 1600])
-        block._bounding_rect = [0, 0, 1800, 1600]
+    def _item(
+        effect: TextEffect, width: int = 1800, height: int = 1600
+    ) -> TextBlkItem:
+        block = TextBlock([0, 0, width, height])
+        block._bounding_rect = [0, 0, width, height]
         block.translation = 'Sh'
         block.fontformat.font_size = 200.0
         block.fontformat.text_effects = TextEffectStack(effects=(effect,))
         return TextBlkItem(block, 0)
 
     def test_large_view_keeps_alpha_and_reuses_visible_cores(self) -> None:
-        item = self._item(ShadowEffect(spread=10.0, blur=0.05, distance=0.1))
+        item = self._item(ShadowEffect(spread=1.0, blur=0.05, distance=0.1))
         renderer = item.effect_renderer
         bounds = renderer.boundingRect()
         plan = plan_effect_raster(bounds.width(), bounds.height(), 1.0)
@@ -138,17 +118,27 @@ class BoundedEffectRendererTest(unittest.TestCase):
             for _rect, pixmap in renderer.tile_cache.values()
         ), EFFECT_CACHE_MAX_BYTES)
 
-    def test_inputs_above_limit_do_not_invalidate_same_pixels(self) -> None:
-        item = self._item(ShadowEffect(spread=8.0))
-        renderer = item.effect_renderer
-        before = renderer._effect_cache_input_key()
-        generation = renderer.cache_generation
-        item.set_text_effects(TextEffectStack(effects=(ShadowEffect(spread=10.0),)))
-        self.assertEqual(before, renderer._effect_cache_input_key())
-        self.assertEqual(generation, renderer.cache_generation)
-        self.assertEqual(item.fontformat.text_effects.effects[0].spread, 10.0)
-        item.set_text_effects(TextEffectStack(effects=(ShadowEffect(spread=9.0),)), preview=True)
-        self.assertFalse(renderer._effect_preview_changes_pixels())
+    def test_supported_large_effects_keep_requested_reach(self) -> None:
+        for effect, expected_bounds in (
+            (ShadowEffect(distance=3.2, blur=0.05, angle=0), (1904, 1704)),
+            (StrokeEffect(width=6.0), (1810, 1610)),
+        ):
+            with self.subTest(effect=effect):
+                item = self._item(effect, 600, 400)
+                renderer = item.effect_renderer
+                bounds = renderer.boundingRect()
+                plan = plan_effect_raster(bounds.width(), bounds.height(), 1.0)
+                self.assertEqual(plan.mode, 'full')
+                self.assertEqual((bounds.width(), bounds.height()), expected_bounds)
+                self.assertEqual(renderer._ordered_surface_nodes()[0][1], effect)
+                renderer.set_export_effect_render(True)
+                try:
+                    pixels = renderer._render_effect_surface(bounds, 1.0)
+                    self.assertFalse(pixels.isNull())
+                    self.assertEqual(renderer.allocation_warning_generation, -1)
+                    self.assertIsNone(renderer.export_error)
+                finally:
+                    renderer.set_export_effect_render(False)
 
 
 if __name__ == '__main__':
