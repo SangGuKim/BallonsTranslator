@@ -104,6 +104,10 @@ The resulting visible ink is centered without changing the stored text. Glyph
 ink may overhang the column, but that overhang affects only painting and
 interaction bounds, never neighboring columns.
 
+세로 중 가로쓰기 범위 뒤에 Qt가 붙여 반환한 공백은 묶음 밖의 세로 공백으로
+배치한다. 공백의 진행량·커서·선택 영역은 세로 셀을 공유하며, 선택한 묶음 내부의
+공백은 가로쓰기 상태를 유지한다.
+
 Ruby/furigana is attached layout content, not a detached overlay. Group Ruby is
 indivisible; mono Ruby may wrap only between base/reading pairs. Each unit uses
 the larger of its base and annotation advances, and the shorter run is spaced

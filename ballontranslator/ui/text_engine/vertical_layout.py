@@ -1621,8 +1621,12 @@ class VerticalTextDocumentLayout(SceneTextLayout):
                 if placement is None:
                     continue
                 line, _offset, transform = placement
-                return block.position() + self._tate_chu_yoko_hit_position(
+                position = self._tate_chu_yoko_hit_position(
                     line, transform, cell, point
+                )
+                trailing = self.line_spaces_lst[block.blockNumber()][line_number][0]
+                return block.position() + min(
+                    position, line.textStart() + line.textLength() - trailing
                 )
             block = block.next()
         return None
@@ -1702,7 +1706,9 @@ class VerticalTextDocumentLayout(SceneTextLayout):
                 text_combine_cell = self.tate_chu_yoko_cell_rect(
                     block, line_number
                 )
-                if text_combine_cell is not None:
+                trailing = self.line_spaces_lst[block.blockNumber()][line_number][0]
+                combined_end = line.textStart() + line.textLength() - trailing
+                if text_combine_cell is not None and (not trailing or cpos < combined_end):
                     placement = self.vertical_line_placement(
                         block, line_number
                     )
@@ -1877,8 +1883,11 @@ class VerticalTextDocumentLayout(SceneTextLayout):
                 )
                 line_context = context
                 selection_backgrounds = ()
-                if intersects and not self.is_tate_chu_yoko_line(block, ii):
+                is_combined = self.is_tate_chu_yoko_line(block, ii)
+                if intersects:
                     cells = self._vertical_line_cells(block, ii)
+                    if is_combined:
+                        cells = [cell for cell in cells if cell[4]]
                     selection_backgrounds = (
                         self._vertical_selection_backgrounds(
                             block, ii, context, cells
@@ -1895,9 +1904,10 @@ class VerticalTextDocumentLayout(SceneTextLayout):
                         context,
                         space_ranges,
                     )
-                    line_context = self._selection_foreground_context(
-                        line_context
-                    )
+                    if not is_combined:
+                        line_context = self._selection_foreground_context(
+                            line_context
+                        )
 
                 if custom_rendering:
                     if not uniform_block_drawn:
@@ -1938,8 +1948,9 @@ class VerticalTextDocumentLayout(SceneTextLayout):
                             offset,
                             orientation,
                             0.0,
-                            context,
+                            line_context,
                             self._report_render_failure,
+                            background_overlays=selection_backgrounds,
                         )
                 elif (
                     placement is not None
@@ -2309,9 +2320,10 @@ class VerticalTextDocumentLayout(SceneTextLayout):
                 num_lspaces = text_len - len(text.lstrip())
 
             if is_text_combine:
-                # Whitespace is part of the authored horizontal run, not
-                # vertical column leading around it.
-                num_rspaces = num_lspaces = 0
+                # Qt consumes spaces after setNumColumns as part of this line.
+                # Only spaces inside the authored range belong to the run.
+                num_lspaces = 0
+                num_rspaces = max(0, text_len - text_combine_length)
             ink_start = line.textStart() + num_lspaces
             ink_length = max(
                 0,
