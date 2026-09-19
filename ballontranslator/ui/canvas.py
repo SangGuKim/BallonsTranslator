@@ -1581,6 +1581,7 @@ class Canvas(QGraphicsScene):
         if self._text_creation_cursor_active:
             self._clear_text_creation_cursor()
         if self.creating_textblock:
+            self.txtblkShapeControl.setContrastOutline(False)
             self.txtblkShapeControl.hide()
             self.txtblkShapeControl.showControls()
         self.creating_textblock = False

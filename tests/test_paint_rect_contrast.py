@@ -23,9 +23,23 @@ class PaintRectContrastTest(unittest.TestCase):
         canvas.startCreateTextblock(QPointF(10, 10), hide_control=True)
         self.assertTrue(canvas.txtblkShapeControl._contrast_outline)
         canvas.clear_states()
+        self.assertFalse(canvas.txtblkShapeControl._contrast_outline)
 
         canvas.startCreateTextblock(QPointF(10, 10), hide_control=False)
         self.assertFalse(canvas.txtblkShapeControl._contrast_outline)
+
+    def test_finishing_paint_box_resets_outline(self) -> None:
+        canvas = Canvas()
+        canvas.startCreateTextblock(QPointF(10, 10), hide_control=True)
+        canvas.endCreateTextblock()
+        self.assertFalse(canvas.txtblkShapeControl._contrast_outline)
+
+    def test_resetting_interaction_restores_normal_outline(self) -> None:
+        view = QGraphicsView()
+        control = TextBlkShapeControl(view)
+        control.setContrastOutline(True)
+        control.resetInteraction()
+        self.assertFalse(control._contrast_outline)
 
     def test_paint_box_outline_contains_black_and_white_dashes(self) -> None:
         control = TextBlkShapeControl(QGraphicsView())
