@@ -95,10 +95,19 @@ JLREQ에서 곡선 따옴표 `“”‘’`는 가로쓰기용이며, 세로쓰�
 이 회전 규칙을 적용하지 않는다. 금칙, 문맥별 약물 간격, 매달기 조판, 루비 읽기의
 세로쓰기 셰이핑은 이 부호 배치 규칙만으로 구현되지 않는다.
 
-Tate-chu-yoko is a horizontal Qt run occupying one vertical flow cell. Its
-layout ignores authored letter spacing and uses the font's half-width
-punctuation plus matching half-, third-, or quarter-width feature when
-available. Standard Roman mode keeps that shaped run's natural horizontal
+Tate-chu-yoko is a horizontal Qt run occupying one vertical flow cell. Multi-character
+runs shape explicit full-width forms as their narrow equivalents, preserving the
+original document text and UTF-16 positions. Single-character runs and unrelated
+compatibility characters stay unchanged. Normalized runs use the same placement
+for paint, effects, selection, and hit testing; their temporary shaping layouts
+contain only the run's text. `TateChuYokoRun` translates run-local glyph and cursor
+indices to block-local UTF-16 offsets at the Qt boundary. These runs are rebuilt
+with the owning vertical layout. Native IME composition remains authoritative
+until commit.
+
+TCY ignores authored letter spacing and uses the font's half-width punctuation
+plus matching half-, third-, or quarter-width feature when available.
+Standard Roman mode keeps that shaped run's natural horizontal
 width; the alternate mode horizontally scales any remaining excess to one em.
 The resulting visible ink is centered without changing the stored text. Glyph
 ink may overhang the column, but that overhang affects only painting and
