@@ -660,6 +660,11 @@
         <source>Close</source>
         <translation>Закрыть</translation>
     </message>
+    <message>
+        <location filename="../../ballontranslator/ui/configpanel.py" line="733"/>
+        <source>Group font weights by family</source>
+        <translation>Группировать начертания по семейству</translation>
+    </message>
 </context>
 <context>
     <name>DrawingPanel</name>
@@ -1029,6 +1034,21 @@
         <location filename="../../ballontranslator/ui/text_engine/formatting/panel.py" line="454" />
         <source>Black</source>
         <translation>Чёрный</translation>
+    </message>
+    <message>
+        <location filename="../../ballontranslator/ui/text_engine/formatting/panel.py" line="553"/>
+        <source>Font Weight</source>
+        <translation>Насыщенность шрифта</translation>
+    </message>
+    <message>
+        <location filename="../../ballontranslator/ui/text_engine/formatting/panel.py" line="1238"/>
+        <source>Text Blocks</source>
+        <translation>Текстовые блоки</translation>
+    </message>
+    <message>
+        <location filename="../../ballontranslator/ui/text_engine/formatting/panel.py" line="1240"/>
+        <source>Text Blocks {indexes}</source>
+        <translation>Текстовые блоки {indexes}</translation>
     </message>
 </context>
 <context>

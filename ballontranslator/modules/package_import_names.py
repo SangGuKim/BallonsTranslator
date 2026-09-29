@@ -4,6 +4,7 @@ PACKAGE_IMPORT_NAMES = {
     'deepl': ['deepl'],
     'diffusers': ['diffusers'],
     'einops': ['einops'],
+    'fugashi': ['fugashi'],
     'gguf': ['gguf'],
     'httpx': ['httpx'],
     'jaconv': ['jaconv'],
@@ -12,6 +13,7 @@ PACKAGE_IMPORT_NAMES = {
     'onnxruntime': ['onnxruntime'],
     'onnxruntime-gpu': ['onnxruntime'],
     'pyspellchecker': ['spellchecker'],
+    'protobuf': ['google.protobuf'],
     'pyobjc-framework-vision': ['Vision', 'objc'],
     'pyyaml': ['yaml'],
     'safetensors': ['safetensors'],
@@ -21,5 +23,6 @@ PACKAGE_IMPORT_NAMES = {
     'transformers': ['transformers'],
     'translators': ['translators'],
     'ultralytics': ['ultralytics'],
+    'unidic-lite': ['unidic_lite'],
     'winsdk': ['winsdk'],
 }

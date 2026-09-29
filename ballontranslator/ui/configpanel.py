@@ -693,6 +693,7 @@ class ConfigPanel(OutsideClickFramelessMixin, FramelessWindow):
     reinstall_torch = Signal()
     check_update = Signal()
     reload_textstyle = Signal(bool)
+    group_font_faces_changed = Signal(bool)
     font_list_changed = Signal(bool)
     compact_vertical_punctuation_changed = Signal(bool)
     apply_auto_tate_chu_yoko_requested = Signal()
@@ -1108,6 +1109,8 @@ class ConfigPanel(OutsideClickFramelessMixin, FramelessWindow):
 
         self.let_show_only_custom_fonts, sublock = typesettingConfigPanel.addCheckBox(self.tr("Show only custom fonts"))
         self.let_show_only_custom_fonts.stateChanged.connect(self.on_show_only_custom_fonts)
+        self.let_group_font_faces, sublock = typesettingConfigPanel.addCheckBox(self.tr("Group font weights by family"))
+        self.let_group_font_faces.stateChanged.connect(self.on_group_font_faces_changed)
 
         font_format_block = typesettingConfigPanel.addBlockWidget(global_fntfmt_group)
         font_format_block.layout().setContentsMargins(0, 0, 0, 0)
@@ -1703,6 +1706,10 @@ class ConfigPanel(OutsideClickFramelessMixin, FramelessWindow):
         pcfg.let_show_only_custom_fonts_flag = self.let_show_only_custom_fonts.isChecked()
         self.font_list_changed.emit(pcfg.let_show_only_custom_fonts_flag)
 
+    def on_group_font_faces_changed(self) -> None:
+        pcfg.let_group_font_faces_flag = self.let_group_font_faces.isChecked()
+        self.group_font_faces_changed.emit(pcfg.let_group_font_faces_flag)
+
     def show_font_exclusion_dialog(self) -> None:
         dialog = self.font_exclude_dialog
         if dialog is not None:
@@ -1738,6 +1745,9 @@ class ConfigPanel(OutsideClickFramelessMixin, FramelessWindow):
             self.codex_panel.syncFromProfile()
         else:
             self.llm_profiles_panel.syncProfile(profile_id)
+
+    def focusOnTranslator(self) -> None:
+        self.focusPipelineModule('translator')
 
     def focusOnLLMProfile(self, profile_id: str, expand_details: bool = True, target: str = 'api_key') -> None:
         if profile_id == 'codex':
@@ -1886,5 +1896,6 @@ class ConfigPanel(OutsideClickFramelessMixin, FramelessWindow):
         self.empty_runcache_checker.setChecked(pcfg.module.empty_runcache)
         self.package_auto_install_checker.setChecked(pcfg.package_manager.auto_install_missing_packages)
         self.let_show_only_custom_fonts.setChecked(pcfg.let_show_only_custom_fonts_flag)
+        self.let_group_font_faces.setChecked(pcfg.let_group_font_faces_flag)
 
         self.blockSignals(False)

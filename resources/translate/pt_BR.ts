@@ -295,6 +295,11 @@
       <source>Shortcut</source>
       <translation>Atalho</translation>
     </message>
+    <message>
+        <location filename="../../ballontranslator/ui/configpanel.py" line="733"/>
+        <source>Group font weights by family</source>
+        <translation>Agrupar espessuras por família</translation>
+    </message>
   </context>
   <context>
     <name>DrawingPanel</name>
@@ -393,6 +398,21 @@
       <location filename="..\ui\fontformatpanel.py" line="1017"/>
       <source>Translation</source>
       <translation>Tradução</translation>
+    </message>
+    <message>
+        <location filename="../../ballontranslator/ui/text_engine/formatting/panel.py" line="553"/>
+        <source>Font Weight</source>
+        <translation>Espessura da fonte</translation>
+    </message>
+    <message>
+        <location filename="../../ballontranslator/ui/text_engine/formatting/panel.py" line="1238"/>
+        <source>Text Blocks</source>
+        <translation>Blocos de texto</translation>
+    </message>
+    <message>
+        <location filename="../../ballontranslator/ui/text_engine/formatting/panel.py" line="1240"/>
+        <source>Text Blocks {indexes}</source>
+        <translation>Blocos de texto {indexes}</translation>
     </message>
   </context>
   <context>
