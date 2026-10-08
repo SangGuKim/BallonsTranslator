@@ -43,6 +43,9 @@ Only committed `TextBlock` and `FontFormat` state belongs in project JSON.
 `QTextDocument`, cursor, selection, and IME belong to live editing. Layout records,
 padding, mappings, previews, pixmaps, and caches are derived and never persisted.
 Passive loading follows [AGENTS.md](../../AGENTS.md#changes-and-data-safety).
+Scene-to-project saves publish the complete block list in one slice assignment,
+preserving list identity. Translation workers snapshot that membership before
+reading sources and translations; they must never observe a partly rebuilt list.
 
 Use coordinate spaces explicitly:
 
@@ -103,6 +106,19 @@ state, and commit publishes one command for its targets. Resolve pending work
 before structural changes, save, undo/redo, target/page replacement, or teardown.
 Commands must invoke the formatting panel's pending-edit resolver **before**
 capturing or mutating state; waiting until stack insertion is too late.
+
+`Canvas` owns save-state accounting through each `QUndoStack` clean marker.
+Replacing an undo branch must invalidate its saved state. Edits merged by
+`QTextDocument` into an existing command invalidate a clean marker at or beyond
+that command; source, translation, and canvas editors share this rule. A merge
+into an older document command below another canvas command conservatively
+invalidates the saved marker until the next save. History
+clearing preserves unsaved state unless the caller explicitly resets it for a
+page/project replacement. Document owners reset their undo-step baseline when
+Qt clears document history. Whole-style replay suppresses user-edit capture
+while keeping layout and painting live; it must not push nested commands.
+Text commands that also modify image pixels mark drawing dirty independently
+on undo and redo; they must not retain commands owned by the drawing stack.
 
 | Session | Specific boundary |
 | --- | --- |

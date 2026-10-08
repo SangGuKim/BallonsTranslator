@@ -1610,6 +1610,37 @@ class TextItemMoveTest(TextTransformTestBase):
         self.assertTrue(self.canvas.text_move_session.active)
         return view.mapToScene(start)
 
+    def test_page_sync_keeps_complete_history_until_block_order_is_published(self) -> None:
+        from ballontranslator.modules.translators.trans_llm import LLMTranslator
+
+        project = self.canvas.imgtrans_proj
+        blocks = project.pages['page.png']
+        project._image_info['page.png'] = {'finish_code': 0}
+        for index, (item, pair) in enumerate(zip(self.items, self.pairs)):
+            item.blk.text = [f'source-{index}']
+            pair.e_source.setPlainText(f'source-{index}')
+        project.mark_translation_finished('page.png', 'English')
+        translator = LLMTranslator('日本語', 'English')
+        self.manager.textblk_item_list.reverse()
+        self.manager.pairwidget_list.reverse()
+        export_html = self.items[0].toHtml
+
+        def observe_history() -> str:
+            snapshot = translator._snapshot_history_page(project, 'page.png', 'English')
+            self.assertIsNotNone(snapshot)
+            self.assertEqual(snapshot.sources, ('source-0', 'source-1'))
+            self.assertEqual(len(snapshot.translations), 2)
+            return export_html()
+
+        with patch.object(self.items[0], 'toHtml', side_effect=observe_history):
+            self.manager.updateTextBlkList()
+        self.assertIs(project.pages['page.png'], blocks)
+        self.assertEqual(blocks, [self.items[1].blk, self.items[0].blk])
+        with patch.object(self.items[0], 'toHtml', side_effect=RuntimeError('export failed')):
+            with self.assertRaisesRegex(RuntimeError, 'export failed'):
+                self.manager.updateTextBlkList()
+        self.assertEqual(blocks, [self.items[1].blk, self.items[0].blk])
+
     def _move_mouse(self, position: QPointF) -> QPointF:
         view = self.canvas.gv
         target = view.mapFromScene(position)
@@ -1725,7 +1756,7 @@ class TextItemMoveTest(TextTransformTestBase):
         self._begin_move()
         QTest.keyClick(self.canvas.gv.viewport(), Qt.Key.Key_Return)
         self.assertEqual(self.canvas.text_undo_stack.count(), 0)
-        self.assertEqual(self.canvas.num_pushed_textstep, 0)
+        self.assertFalse(self.canvas.text_change_unsaved())
         self.assertFalse(self.canvas.projstate_unsaved)
         self.assertEqual(menus, [])
 

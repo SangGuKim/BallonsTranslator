@@ -1,18 +1,20 @@
-"""Shared request dispatch for API Chat Completions and Codex Responses."""
+"""Shared request dispatch for Chat Completions and API/subscription Responses."""
 
 from __future__ import annotations
 
+import os
 import re
 import threading
 import time
 import uuid
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, TYPE_CHECKING
 
 from .context.errors import provider_error_message
 from .context.token_usage import format_completion_token_usage
 from .exceptions import (
     LLMApiKeyRequiredError,
+    LLMAuthenticationError,
     LLMOutputLimitError,
     LLMRequestStopped,
     LLMUserActionRequiredError,
@@ -26,6 +28,9 @@ from ballontranslator.utils.llm_profiles import (
     resolve_api_key,
 )
 
+if TYPE_CHECKING:
+    from .codex import CodexChatSession, CodexTurnState
+    from .openai_responses import OpenAIResponsesSession
 
 OPENAI_MAX_TOKENS_MODELS = frozenset({
     "gpt-4.1",
@@ -169,6 +174,9 @@ class LLMChatResult:
     usage: Any = None
     finish_reason: str = ''
     prompt_cache_diagnostics: object = None
+    codex_response_items: Tuple[Dict[str, object], ...] = ()
+    codex_cache_key: str = ''
+    codex_account_generation: Optional[int] = None
 
 
 class LLMChatRequestError(RuntimeError):
@@ -201,14 +209,21 @@ class LLMChatRequester:
         self.request_count_minute = 0
         self.minute_start_time = time.time()
         self.stop_event: Optional[threading.Event] = None
-        self._codex_cache_keys: Dict[Tuple[str, str, int], str] = {}
+        self._codex_sessions: Dict[Tuple[str, str, int], CodexChatSession] = {}
+        self._openai_session: Optional[OpenAIResponsesSession] = None
+        self._openai_session_identity: Optional[Tuple] = None
 
     def set_stop_event(
         self,
         stop_event: Optional[threading.Event],
     ) -> None:
         if stop_event is not self.stop_event:
-            self._codex_cache_keys.clear()
+            for session in self._codex_sessions.values():
+                session.close()
+            self._codex_sessions.clear()
+            if self._openai_session is not None:
+                self._openai_session.close()
+                self._openai_session = None
         self.stop_event = stop_event
 
     def _wait(self, seconds: float) -> None:
@@ -279,12 +294,15 @@ class LLMChatRequester:
             )
 
         openai = self._openai_module()
+        previous_client = self.client
         self.client = openai.OpenAI(
             api_key=api_key,
             base_url=base_url,
             http_client=self._http_client(proxy),
         )
         self.client_cache_key = cache_key
+        if previous_client is not None:
+            previous_client.close()
         return self.client
 
     def _respect_delay(self) -> None:
@@ -313,36 +331,105 @@ class LLMChatRequester:
         self.last_request_time = time.time()
         self.request_count_minute += 1
 
+    def _codex_websocket_enabled(self) -> bool:
+        return os.environ.get('BALLOONTRANS_CODEX_WEBSOCKET') != '0'
+
+    def _check_request_current(self, stop_event: Optional[threading.Event]) -> None:
+        if stop_event is not self.stop_event or (stop_event is not None and stop_event.is_set()):
+            raise LLMRequestStopped()
+
     def request_chat_completion(
         self,
         profile: LLMProfile,
         api_args: Dict[str, Any],
+        *,
+        codex_turn: Optional[CodexTurnState] = None,
     ) -> LLMChatResult:
         """Perform one request; feature owners decide whether to retry it."""
+        # Throttling and client/session setup can overlap a run change. Never
+        # adopt the replacement run's token for this request's existing inputs.
+        stop_event = self.stop_event
+        self._check_request_current(stop_event)
         if profile.backend == 'codex':
-            from .codex import account, request_chat_completion
+            if self._openai_session is not None:
+                self._openai_session.close()
+                self._openai_session = None
+            from .codex import CodexChatSession, account, request_chat_completion
             self._respect_delay()
+            self._check_request_current(stop_event)
             identity = (profile.id, str(api_args['model']), account.generation)
-            if identity not in self._codex_cache_keys:
-                self._codex_cache_keys[identity] = str(uuid.uuid4())
-            return request_chat_completion(
-                profile, api_args, self.stop_event,
-                self._codex_cache_keys[identity], str(self.get_param_value('proxy') or ''),
+            proxy = str(self.get_param_value('proxy') or '')
+            websocket = self._codex_websocket_enabled()
+            session = self._codex_sessions.get(identity)
+            if (session is None or session.closed or session.proxy != proxy
+                    or session.websocket != websocket):
+                for old_identity in tuple(self._codex_sessions):
+                    if old_identity[2] != identity[2]:
+                        self._codex_sessions.pop(old_identity).close()
+                cache_key = session.cache_key if session is not None else str(uuid.uuid4())
+                if session is not None:
+                    session.close()
+                session = self._codex_sessions[identity] = CodexChatSession(
+                    cache_key, proxy, account_generation=identity[2], websocket=websocket)
+            self._check_request_current(stop_event)
+            result = request_chat_completion(
+                profile, api_args, stop_event,
+                session.cache_key, proxy, session=session, turn=codex_turn,
             )
+            self._check_request_current(stop_event)
+            return result
         if profile.backend != 'openai':
             raise LLMUserActionRequiredError('This LLM profile backend is unavailable.')
         openai = self._openai_module()
         client = self._initialize_client(profile)
         self._respect_delay()
+        self._check_request_current(stop_event)
+        # Only the direct OpenAI endpoint has a known Responses WS contract.
+        # Check the SDK's resolved URL, including OPENAI_BASE_URL overrides.
+        from .openai_responses import OpenAIResponsesSession
+        base_url = str(getattr(client, 'base_url', '')).rstrip('/')
+        model = str(api_args.get('model', ''))
+        native = base_url == 'https://api.openai.com/v1'
+        version = gpt_model_version(model)
+        responses_model = ((version or (0, 0)) >= (4, 1) or model.startswith('gpt-4o')
+                           or re.match(r'^o[1-9](?:-|$)', model) is not None)
+        responses_model = responses_model and model not in ('o1-preview', 'o1-mini')
+        use_responses = native and responses_model
+        identity = (profile.id, model, self.client_cache_key)
+        session = self._openai_session
+        cache_key = (session.cache_key if session is not None and identity == self._openai_session_identity
+                     else None)
+        if session is not None and (not use_responses or session.closed or identity != self._openai_session_identity):
+            session.close()
+            self._openai_session = session = None
+        if use_responses:
+            if session is None:
+                headers = {key: value for key, value in client.default_headers.items()
+                           if isinstance(value, str) and key.lower() not in ('accept', 'content-type')}
+                # Newer SDKs add auth during HTTP request preparation, outside
+                # default_headers. Our WebSocket bypasses that preparation.
+                headers['Authorization'] = f'Bearer {client.api_key}'
+                self._openai_session = session = OpenAIResponsesSession(
+                    base_url + '/responses', cache_key or str(uuid.uuid4()),
+                    str(self.get_param_value('proxy') or ''), headers)
+                self._openai_session_identity = identity
+            self._check_request_current(stop_event)
+            result = session.request_chat(api_args, profile, stop_event)
+            if result is not None:
+                self._check_request_current(stop_event)
+                return result
+        self._check_request_current(stop_event)
         try:
             completion = client.chat.completions.create(**api_args)
-        except getattr(openai, 'AuthenticationError') as error:
-            raise LLMApiKeyRequiredError(
-                profile.id, profile.name
-            ) from error
-        except getattr(openai, 'APIStatusError') as error:
-            raise LLMChatRequestError(error) from error
+        except Exception as error:
+            self._check_request_current(stop_event)
+            if isinstance(error, getattr(openai, 'AuthenticationError')):
+                raise LLMAuthenticationError(profile.id, profile.name) from error
+            if isinstance(error, getattr(openai, 'APIStatusError')):
+                raise LLMChatRequestError(error) from error
+            raise
 
+        self._check_request_current(stop_event)
         choice = next(iter(getattr(completion, 'choices', ())), None)
         message = getattr(choice, 'message', None)
         content = getattr(message, 'content', None)
