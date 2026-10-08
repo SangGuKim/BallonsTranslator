@@ -36,7 +36,7 @@ class CombinedWhitespaceTest(unittest.TestCase):
         for standard in (True, False):
             for count in (1, 4, 12):
                 with self.subTest(standard=standard, count=count):
-                    text = '#109' + ' ' * count + '타이틀'
+                    text = '#109' + ' ' * count + 'Title'
                     item = self._item(text, 4, standard)
                     block = item.document().firstBlock()
                     spaces = [c for c in item.layout._vertical_line_cells(block, 0) if c[4]]
@@ -54,7 +54,7 @@ class CombinedWhitespaceTest(unittest.TestCase):
                     self.assertEqual(item.toPlainText(), text)
 
     def test_authored_internal_space_stays_in_horizontal_run(self) -> None:
-        item = self._item('#1 09   타이틀', 5, True)
+        item = self._item('#1 09   Title', 5, True)
         block = item.document().firstBlock()
         spaces = [c for c in item.layout._vertical_line_cells(block, 0) if c[4]]
         self.assertEqual([c[0] for c in spaces], [5, 6, 7])

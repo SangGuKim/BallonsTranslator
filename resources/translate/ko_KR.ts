@@ -989,11 +989,6 @@
         <source>Show only custom fonts</source>
         <translation>커스텀 폰트만 표시</translation>
     </message>
-    <message>
-        <location filename="../../ballontranslator/ui/configpanel.py" line="733"/>
-        <source>Group font weights by family</source>
-        <translation>글꼴 계열별로 굵기 묶기</translation>
-    </message>
 </context>
 <context>
     <name>DialogCloseButton</name>
@@ -1441,21 +1436,6 @@
         <location filename="../../ballontranslator/ui/text_engine/formatting/panel.py" line="1031"/>
         <source>Translation</source>
         <translation>번역</translation>
-    </message>
-    <message>
-        <location filename="../../ballontranslator/ui/text_engine/formatting/panel.py" line="553"/>
-        <source>Font Weight</source>
-        <translation>글꼴 굵기</translation>
-    </message>
-    <message>
-        <location filename="../../ballontranslator/ui/text_engine/formatting/panel.py" line="1238"/>
-        <source>Text Blocks</source>
-        <translation>텍스트 블록</translation>
-    </message>
-    <message>
-        <location filename="../../ballontranslator/ui/text_engine/formatting/panel.py" line="1240"/>
-        <source>Text Blocks {indexes}</source>
-        <translation>텍스트 블록 {indexes}</translation>
     </message>
 </context>
 <context>
@@ -2660,7 +2640,7 @@
         <location filename="../../ballontranslator/ui/mainwindow.py" line="937"/>
         <source>Restart to apply changes? 
 </source>
-        <translation>변경 사항을 적용하기 위해 다시 시작 하시겠습니까?
+        <translation>변경 사항을 적용하기 위해 다시 시작 하시겠습니까? 
 </translation>
     </message>
     <message>

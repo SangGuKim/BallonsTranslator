@@ -56,6 +56,11 @@ left unset when common ligatures should remain available because an explicit Qt
 spacing property may suppress optional ligatures. Version-specific feature-tag
 handling stays inside the layout/annotation boundary.
 
+Representative ink bounds define row and cell metrics when available from the
+selected font. Missing or empty reference ink falls back to that font's line
+metrics without moving valid text above the logical box. Vertical glyph
+placement retains its shaped ink as the authoritative geometry.
+
 ### Vertical
 
 `VerticalTextDocumentLayout` normally creates one cell per grapheme and places
@@ -63,10 +68,10 @@ columns from right to left. Punctuation orientation and alignment are semantic
 classes near the top of `vertical_layout.py`; extend those classes instead of
 adding paint-time glyph exceptions.
 
-한글은 음절별 외곽 대신 글자 폭을 기준으로 배치하여 폰트의 좌우 여백을 보존한다.
-블록의 같은 열에 있는 한글에는 공통 상단 보정을 적용하여 글자 진행량을 바꾸지
-않고 윗획이 칸 위로 돌출하는 것을 막는다. 나머지 돌출 영역은 그리기와 상호작용
-영역에 반영한다. 구두점과 세로 중 가로쓰기는 기존 배치 규칙을 유지한다.
+Hangul placement preserves font side bearings by centering the advance rather
+than each syllable's ink bounds. Within each block, Hangul in a column
+shares a top correction without changing flow advances. Any remaining ink
+overflow contributes to painting and interaction bounds.
 
 Standard Roman mode keeps proportional Roman glyphs upright and centered. The
 alternate mode rotates them clockwise and uses the Chinese mixed-layout
@@ -74,28 +79,24 @@ punctuation path. Compact punctuation shortens eligible punctuation cells
 without clipping their ink. Repeated dashes, bars, leaders, and ellipses form
 indivisible runs, with character spacing applied after the run.
 
-일본어 부호의 방향과 칸 안 배치는 [JLREQ §3.1 및 부록 A](https://www.w3.org/TR/jlreq/)
-와 [Unicode 세로쓰기 방향](https://www.unicode.org/reports/tr50/)을 기준으로 삼는다.
-현재 엔진은 Qt 가로쓰기 글리프의 회전·이동으로 처리하며, 폰트의 `vert`/`vrt2`
-대체 글리프를 적용하는 완전한 세로쓰기 셰이핑 엔진은 아니다.
+Japanese punctuation classes follow [JLREQ](https://www.w3.org/TR/jlreq/)
+and [Unicode vertical orientation](https://www.unicode.org/reports/tr50/).
+Fullwidth stops `、。，．` anchor to the upper-right of the base character
+frame independently of Roman orientation. ASCII punctuation retains its
+mode-specific behavior.
+Standard mode rotates fullwidth colons and semicolons; alternate mode retains
+the existing CLREQ placement. Compact opening brackets must not lose more
+leading space than their actual font bearing permits.
+Character membership belongs in the semantic sets in
+`vertical_layout.py` and their focused tests.
 
-| 부호 분류 | 현재 세로쓰기 처리 |
-| --- | --- |
-| 괄호·인용 부호(cl-01/02) | 전각 괄호, 겹괄호, 기유메, `〝〞〟`를 시계 방향으로 회전한다. 낫표와 따옴표의 좌우 기준을 유지한다. |
-| 하이픈류(cl-03), 장음 | `‐–〜゠` 및 `ー`를 회전한다. 진행량은 폰트의 실제 폭을 사용한다. |
-| 느낌표·물음표(cl-04) | 표준 영문 모드에서는 바로 세워 중앙에 배치한다. 대체 모드의 기존 CLREQ 배치를 유지한다. |
-| 중점류(cl-05) | `・`는 중앙에 둔다. 전각 `：；`는 표준 모드에서 회전하고, 대체 모드에서는 기존 배치를 유지한다. |
-| 구점·독점(cl-06/07) | `、。，．`는 영문 모드와 무관하게 칸의 오른쪽 위에 배치한다. ASCII `,.`는 영문 모드의 기존 규칙을 유지하며 문자를 자동 치환하지 않는다. |
-| 대시·리더(cl-08) | `—―…‥`를 회전하고, 동일 부호의 연속 구간은 기존 분리 금지 처리를 유지한다. 이미 세로 방향인 `〳〴〵`는 회전하지 않는다. |
-
-`～`(U+FF5E)는 Unicode의 Tr 분류에 따라 세로 대체 글리프가 없는 현재 엔진에서 회전한다.
-JLREQ에서 곡선 따옴표 `“”‘’`는 가로쓰기용이며, 세로쓰기에서는 낫표나 `〝〟`를 사용한다.
-세로 문장 안에서 회전한 영문에 곡선 따옴표를 쓰는 예외가 있다. 엔진의 곡선 따옴표
-회전은 입력 보존을 위한 폴백이며, 일본어 세로쓰기 권장 표기를 뜻하지 않는다. 자동 치환하지 않는다.
-압축한 여는 괄호의 선행 여백은 실제 글리프 여백보다 더 제거하지 않는다.
-배치 결과는 효과·선택·커서·히트 테스트가 공유한다. 세로 중 가로쓰기 묶음 내부에는
-이 회전 규칙을 적용하지 않는다. 금칙, 문맥별 약물 간격, 매달기 조판, 루비 읽기의
-세로쓰기 셰이핑은 이 부호 배치 규칙만으로 구현되지 않는다.
+The engine rotates and translates Qt horizontal glyphs; it does not implement
+full vertical shaping with `vert`/`vrt2` substitutions. Rotated curly quotes
+preserve authored input as a fallback, not a recommendation for Japanese
+vertical quotation style. No characters are automatically replaced, and these
+rotation rules do not apply inside tate-chu-yoko. Line-start/end prohibitions,
+contextual punctuation spacing, hanging punctuation, and vertical shaping of
+Ruby readings require separate support.
 
 Tate-chu-yoko is a horizontal Qt run occupying one vertical flow cell. Multi-character
 runs shape explicit full-width forms as their narrow equivalents, preserving the
@@ -115,9 +116,10 @@ The resulting visible ink is centered without changing the stored text. Glyph
 ink may overhang the column, but that overhang affects only painting and
 interaction bounds, never neighboring columns.
 
-세로 중 가로쓰기 범위 뒤에 Qt가 붙여 반환한 공백은 묶음 밖의 세로 공백으로
-배치한다. 공백의 진행량·커서·선택 영역은 세로 셀을 공유하며, 선택한 묶음 내부의
-공백은 가로쓰기 상태를 유지한다.
+Qt may include trailing spaces beyond the authored tate-chu-yoko range in the
+same line. Those spaces remain separate vertical cells so flow advance, caret,
+selection, and hit testing agree at the group boundary. Spaces authored inside
+the group remain horizontal.
 
 Ruby/furigana is attached layout content, not a detached overlay. Group Ruby is
 indivisible; mono Ruby may wrap only between base/reading pairs. Each unit uses

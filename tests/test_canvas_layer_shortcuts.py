@@ -19,15 +19,15 @@ class CanvasLayerShortcutTest(unittest.TestCase):
     def setUp(self) -> None:
         self.canvas = Canvas()
         self.canvas.editor_index = 0
-        self.canvas.textlayer_trans_slider = QSlider()
+        self.canvas.editing_layer_opacity_slider = QSlider()
         self.canvas.originallayer_trans_slider = QSlider()
         for slider in (
-            self.canvas.textlayer_trans_slider,
+            self.canvas.editing_layer_opacity_slider,
             self.canvas.originallayer_trans_slider,
         ):
             slider.setRange(0, 100)
-        self.canvas.textlayer_trans_slider.valueChanged.connect(
-            self.canvas.setTextLayerTransparencyBySlider
+        self.canvas.editing_layer_opacity_slider.valueChanged.connect(
+            self.canvas.setEditingLayerOpacityBySlider
         )
         self.update_count = 0
         self.canvas.updateLayers = self._record_update
@@ -46,21 +46,21 @@ class CanvasLayerShortcutTest(unittest.TestCase):
     def test_number_key_blends_layers_in_paint_mode(self) -> None:
         self._press(Qt.Key.Key_3)
 
-        self.assertEqual(self.canvas.textlayer_trans_slider.value(), 30)
+        self.assertEqual(self.canvas.editing_layer_opacity_slider.value(), 30)
         self.assertEqual(self.canvas.originallayer_trans_slider.value(), 70)
         self.assertEqual(self.canvas.textLayer.opacity(), 0.3)
         self.assertEqual(self.update_count, 1)
 
     def test_zero_toggles_original_and_inpainted_in_paint_mode(self) -> None:
-        self.canvas.textlayer_trans_slider.setValue(100)
+        self.canvas.editing_layer_opacity_slider.setValue(100)
         self._press(Qt.Key.Key_0)
 
-        self.assertEqual(self.canvas.textlayer_trans_slider.value(), 0)
+        self.assertEqual(self.canvas.editing_layer_opacity_slider.value(), 0)
         self.assertEqual(self.canvas.originallayer_trans_slider.value(), 100)
 
         self._press(Qt.Key.Key_0)
 
-        self.assertEqual(self.canvas.textlayer_trans_slider.value(), 100)
+        self.assertEqual(self.canvas.editing_layer_opacity_slider.value(), 100)
         self.assertEqual(self.canvas.originallayer_trans_slider.value(), 0)
 
 
