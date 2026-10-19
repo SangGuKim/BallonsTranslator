@@ -108,11 +108,10 @@ def _metrics_font(ffamily: str, size: float, weight: int, italic: bool) -> QFont
 def get_punc_rect(char: str, ffamily: str, size: float, weight: int, italic: bool) -> List[QRectF]:
     """Return representative ink metrics with a full-metric fallback.
 
-    Some legacy or narrowly scoped fonts do not contain the representative
-    CJK/Latin glyphs used by the layout. Qt can return an empty tight box,
-    synthetic-bold ink, or another font's fallback ink. Check the selected
-    face directly and use its ascent/descent when no reference glyph exists.
-    Other empty tight boxes retain the ordinary bounding-box fallback.
+    The horizontal baseline probe must use the selected face's line metrics
+    when none of its reference glyphs exist. Ordinary CJK/punctuation queries
+    retain valid substitute ink because Qt also uses it to draw those glyphs.
+    Empty tight boxes fall back to ordinary bounds, then line metrics.
 
     >>> len(get_punc_rect('A', 'Sans Serif', 12, QFont.Weight.Normal, False))
     2
@@ -121,17 +120,18 @@ def get_punc_rect(char: str, ffamily: str, size: float, weight: int, italic: boo
     fm = QFontMetricsF(font)
     tight = fm.tightBoundingRect(char)
     bounds = fm.boundingRect(char)
-    raw_font = QRawFont.fromFont(font)
-    if raw_font.isValid() and not any(
-        raw_font.supportsCharacter(ord(character)) for character in char
-    ):
-        # Windows metrics include fallback glyphs; keep the selected face's
-        # line metrics instead of fallback ink or synthetic missing-glyph ink.
-        tight = QRectF(
-            bounds.left(), -fm.ascent(), max(0.0, bounds.width()),
-            max(0.0, fm.ascent() + fm.descent()),
-        )
-    elif tight.width() <= 0 or tight.height() <= 0:
+    if char == '木fg':
+        raw_font = QRawFont.fromFont(font)
+        if raw_font.isValid() and not any(
+            raw_font.supportsCharacter(ord(character)) for character in char
+        ):
+            # Substitute probe ink can have an unrelated baseline. This does
+            # not apply to vertical cells, which use actual CJK fallback ink.
+            tight = QRectF(
+                bounds.left(), -fm.ascent(), max(0.0, bounds.width()),
+                max(0.0, fm.ascent() + fm.descent()),
+            )
+    if tight.width() <= 0 or tight.height() <= 0:
         tight = QRectF(bounds)
     if tight.width() <= 0 or tight.height() <= 0:
         tight = QRectF(
@@ -143,7 +143,7 @@ def get_punc_rect(char: str, ffamily: str, size: float, weight: int, italic: boo
     return [tight, bounds]
 
 @lru_cache(maxsize=2048)
-def get_char_width(char: str, ffamily: str, size: float, weight: int, italic: bool) -> int:
+def get_char_width(char: str, ffamily: str, size: float, weight: int, italic: bool) -> float:
     fm = QFontMetricsF(_metrics_font(ffamily, size, weight, italic))
     return fm.horizontalAdvance(char)
 

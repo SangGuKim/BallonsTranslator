@@ -78,7 +78,7 @@ PUNSET_HALF = {chr(i) for i in range(0x21, 0x7F)}
 PUNSET_PAUSEORSTOP = {
     '。', '．', '，', '、', '：', '；', '！', '‼', '？', '⁇', '⁈', '⁉',
 }
-# Fullwidth comma/full stop placement is independent of Roman orientation.
+# 전각 구점과 독점은 영문 방향 설정과 관계없이 오른쪽 위에 배치한다.
 PUNSET_UPPER_RIGHT_STOP = {'、', '。', '，', '．'}
 PUNSET_ALIGNCENTER = {'·', '・', '‧', '●', '•'}
 # ‶ pairs with either 〟 or ″ as the closing mark.
@@ -126,7 +126,6 @@ Miscellaneous_Symbols_Pattern = r'\u2600-\u26FF'  # align center in vertical mod
 vertical_force_aligncentel_pattern = re.compile('[' + Dingbats_vertical_aligncenter + Miscellaneous_Symbols_Pattern + r'⁁⁂⁇⁈⁉⁊⁋⁎※⁑⁒⁕⁖⁘⁙⁛⁜‼‽]')
 
 
-@lru_cache(maxsize=512)
 def _is_hangul(char: str) -> bool:
     """Identify Hangul bases, including decomposed and compatibility jamo.
 
@@ -772,7 +771,7 @@ class VerticalTextDocumentLayout(SceneTextLayout):
                 continue
             _draw_offsets = []
             self._draw_offset.append(_draw_offsets)
-            hangul_columns = {}
+            hangul_baselines = {}
 
             layout = block.layout()
             blk_text = block.text()
@@ -926,8 +925,8 @@ class VerticalTextDocumentLayout(SceneTextLayout):
                                 ) / 2
                             )
                         elif char in PUNSET_PAUSEORSTOP:
-                            # Fullwidth stops and the alternate CLREQ punctuation
-                            # path share the upper-right character-frame anchor.
+                            # CLREQ's Mainland convention places stop marks at
+                            # the upper-right of their full character frame.
                             xoff = (
                                 -act_rect.left()
                                 + base_width
@@ -945,22 +944,23 @@ class VerticalTextDocumentLayout(SceneTextLayout):
                             )
 
                         if _is_hangul(char):
-                            # Keep the font's side bearings instead of centering
-                            # each syllable's different outline independently.
-                            grapheme = _utf16_slice(
-                                blk_text, ink_start, ink_length
-                            )
+                            # Use the shaped advance to preserve bearings even
+                            # when leading spaces have another font or size.
+                            start_x = self._line_cursor_x(line, ink_start)
+                            end_x = self._line_cursor_x(line, ink_start + ink_length)
                             xoff = (
-                                base_width
-                                - cfmt.font_metrics.horizontalAdvance(grapheme)
-                            ) / 2
-                            column = hangul_columns.setdefault(
-                                line.x(), {'shift': 0.0, 'offsets': []}
+                                (base_width - abs(end_x - start_x)) / 2
+                                - min(start_x, end_x) + line.x() + space_shift
                             )
-                            column['shift'] = max(
-                                column['shift'], -act_rect.top() - yoff
+                            # A larger font must not shift smaller syllables
+                            # sharing its column. These metric fonts are read-only.
+                            baseline = hangul_baselines.setdefault(
+                                (line.x(), cfmt.font), {'shift': 0.0, 'offsets': []}
                             )
-                            column['offsets'].append(xy_offsets)
+                            baseline['shift'] = max(
+                                baseline['shift'], -act_rect.top() - yoff
+                            )
+                            baseline['offsets'].append(xy_offsets)
 
                     xoff += left_margin
 
@@ -969,11 +969,11 @@ class VerticalTextDocumentLayout(SceneTextLayout):
                         yoff += space_shift
 
                 xy_offsets[0], xy_offsets[1] = xoff, yoff
-            # Use one correction per column so tall syllables do not introduce
-            # new baseline jitter. Flow advances and Ruby units stay unchanged.
-            for column in hangul_columns.values():
-                for offsets in column['offsets']:
-                    offsets[1] += column['shift']
+            # Equal fonts share a correction within their column, keeping the
+            # original baseline differences. Flow and Ruby units stay unchanged.
+            for baseline in hangul_baselines.values():
+                for offsets in baseline['offsets']:
+                    offsets[1] += baseline['shift']
             if cached is not None and not custom_rendering:
                 self._plain_column_cache[blk_no] = cached._replace(
                     draw_offsets=tuple(tuple(offsets) for offsets in _draw_offsets),
@@ -1281,6 +1281,7 @@ class VerticalTextDocumentLayout(SceneTextLayout):
         block = self.document().firstBlock()
         while block.isValid():
             text_layout = block.layout()
+            block_text = block.text()
             for line_number in range(text_layout.lineCount()):
                 placement = self.vertical_line_placement(block, line_number)
                 if placement is None:
@@ -1288,7 +1289,7 @@ class VerticalTextDocumentLayout(SceneTextLayout):
                 line, offset, orientation = placement
                 if orientation.isIdentity() and not _is_hangul(
                     _utf16_slice(
-                        block.text(), line.textStart(), line.textLength()
+                        block_text, line.textStart(), line.textLength()
                     ).lstrip()
                 ):
                     continue
@@ -1611,13 +1612,14 @@ class VerticalTextDocumentLayout(SceneTextLayout):
                 )
                 if placement is None:
                     continue
+                source_line = text_layout.lineAt(line_number)
                 line, _offset, transform = placement
                 position = self._tate_chu_yoko_hit_position(
                     line, transform, cell, point
                 )
                 trailing = self.line_spaces_lst[block.blockNumber()][line_number][0]
                 return block.position() + min(
-                    position, line.textStart() + line.textLength() - trailing
+                    position, source_line.textStart() + source_line.textLength() - trailing
                 )
             block = block.next()
         return None
@@ -2165,8 +2167,11 @@ class VerticalTextDocumentLayout(SceneTextLayout):
         if block.layout().preeditAreaText():
             return line
         start = line.textStart()
-        end = start + line.textLength()
-        if _grapheme_count(text) < 2:
+        text_length = _utf16_length(text)
+        end = start + text_length
+        # Even a single grapheme needs isolation when Qt absorbs spaces outside
+        # its authored range; those spaces must not affect normalization or fit.
+        if _grapheme_count(text) < 2 and text_length == line.textLength():
             return line
         normalized_text = normalize_tate_chu_yoko_text(text)
 
@@ -2275,6 +2280,7 @@ class VerticalTextDocumentLayout(SceneTextLayout):
 
         char_idx = 0
         tl = block.layout()
+        has_preedit = bool(tl.preeditAreaText())
         tl.beginLayout()
         option = doc.defaultTextOption()
         option.setWrapMode(QTextOption.WrapAnywhere)
@@ -2306,9 +2312,16 @@ class VerticalTextDocumentLayout(SceneTextLayout):
                 )
                 columns = max(1, _grapheme_count(combined_text))
                 line.setNumColumns(columns)
-                # A ligature can consume multiple characters as one column.
-                # Do not let it pull the following character into TCY.
-                while columns > 1 and line.textLength() > text_combine_length:
+                # Qt includes trailing spaces in textLength without consuming
+                # extra columns. Only visible overflow indicates that a
+                # ligature pulled a following character into the combined run.
+                while (
+                    columns > 1 and line.textLength() > text_combine_length
+                    and _utf16_slice(
+                        blk_text, char_idx + text_combine_length,
+                        line.textLength() - text_combine_length,
+                    ).strip()
+                ):
                     columns -= 1
                     line.setNumColumns(columns)
             else:
@@ -2378,9 +2391,10 @@ class VerticalTextDocumentLayout(SceneTextLayout):
 
             if is_text_combine:
                 # Qt consumes spaces after setNumColumns as part of this line.
-                # Only spaces inside the authored range belong to the run.
+                # During IME, native lengths also contain temporary characters
+                # absent from the authored range; keep that native run intact.
                 num_lspaces = 0
-                num_rspaces = max(0, text_len - text_combine_length)
+                num_rspaces = 0 if has_preedit else max(0, text_len - text_combine_length)
             ink_start = line.textStart() + num_lspaces
             ink_length = max(
                 0,
@@ -2503,7 +2517,9 @@ class VerticalTextDocumentLayout(SceneTextLayout):
 
                 if is_text_combine:
                     shaped_line = self._prepare_tate_chu_yoko_line(
-                        block, line, text, text_combine_formats[char_idx]
+                        block, line,
+                        _utf16_slice(blk_text, ink_start, ink_length),
+                        text_combine_formats[char_idx],
                     )
                     # Standard Roman mode keeps the shaped horizontal width;
                     # alternate mode retains the CSS-like one-em fit.
