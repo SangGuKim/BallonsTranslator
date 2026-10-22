@@ -589,7 +589,7 @@ class TransformParameterPanel(QFrame):
         self.move_up_button.setToolTip(self.tr('Move Up'))
         self.move_up_button.setAccessibleName(self.tr('Move Up'))
         self.move_up_button.clicked.connect(
-            lambda: self.move_requested.emit(self.index, -1)
+            self._request_move_up
         )
 
         self.move_down_button = QToolButton(self)
@@ -600,7 +600,7 @@ class TransformParameterPanel(QFrame):
         self.move_down_button.setToolTip(self.tr('Move Down'))
         self.move_down_button.setAccessibleName(self.tr('Move Down'))
         self.move_down_button.clicked.connect(
-            lambda: self.move_requested.emit(self.index, 1)
+            self._request_move_down
         )
 
         self.close_button = QToolButton(self)
@@ -611,7 +611,7 @@ class TransformParameterPanel(QFrame):
         self.close_button.setToolTip(self.tr('Delete Transform'))
         self.close_button.setAccessibleName(self.tr('Delete Transform'))
         self.close_button.clicked.connect(
-            lambda: self.remove_requested.emit(self.index)
+            self._request_remove
         )
 
         action_widget = QWidget(self)
@@ -689,24 +689,20 @@ class TransformParameterPanel(QFrame):
                 QSizePolicy.Policy.Fixed,
             )
             control.commit_requested.connect(
-                lambda name, value, self=self:
-                self.commit_requested.emit(self.index, name, value)
+                self._request_commit
             )
             control.user_interacted.connect(
-                lambda self=self: self.selected.emit(self.index)
+                self._request_selection
             )
             if isinstance(control, CommittedTransformControl):
                 control.preview_requested.connect(
-                    lambda name, value, self=self:
-                    self.preview_requested.emit(self.index, name, value)
+                    self._request_preview
                 )
                 control.drag_commit_requested.connect(
-                    lambda name, value, self=self:
-                    self.drag_commit_requested.emit(self.index, name, value)
+                    self._request_drag_commit
                 )
                 control.preview_canceled.connect(
-                    lambda name, self=self:
-                    self.preview_canceled.emit(self.index, name)
+                    self._cancel_preview
                 )
             self.controls[spec.attribute_name] = control
             section = spec.section() if spec.section is not None else None
@@ -753,6 +749,30 @@ class TransformParameterPanel(QFrame):
         layout.addWidget(controls_widget)
 
         self._sync_action_visibility()
+
+    def _request_move_up(self) -> None:
+        self.move_requested.emit(self.index, -1)
+
+    def _request_move_down(self) -> None:
+        self.move_requested.emit(self.index, 1)
+
+    def _request_remove(self) -> None:
+        self.remove_requested.emit(self.index)
+
+    def _request_commit(self, name: str, value: object) -> None:
+        self.commit_requested.emit(self.index, name, value)
+
+    def _request_selection(self) -> None:
+        self.selected.emit(self.index)
+
+    def _request_preview(self, name: str, value: object) -> None:
+        self.preview_requested.emit(self.index, name, value)
+
+    def _request_drag_commit(self, name: str, value: object) -> None:
+        self.drag_commit_requested.emit(self.index, name, value)
+
+    def _cancel_preview(self, name: str) -> None:
+        self.preview_canceled.emit(self.index, name)
 
     def set_index(self, index: int) -> None:
         self.index = int(index)

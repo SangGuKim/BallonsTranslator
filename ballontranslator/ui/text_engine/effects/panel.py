@@ -325,7 +325,7 @@ class TextEffectPanel(PanelArea):
             card = self.alpha_mask_card
             self.alpha_mask_card = None
             self.mask_card_layout.removeWidget(card)
-            card.setParent(None)
+            card.hide()
             card.deleteLater()
 
     def refresh_alpha_mask_state(self) -> None:
@@ -396,7 +396,9 @@ class TextEffectPanel(PanelArea):
                 if isinstance(card, (TextFillEffectCard, SyntheticBoldEffectCard))
                 else self.cards_layout
             ).removeWidget(card)
-            card.setParent(None)
+            # Keep the parent through deferred deletion to avoid a temporary
+            # native top-level window during canvas selection changes.
+            card.hide()
             card.deleteLater()
         self.effect_cards = []
 

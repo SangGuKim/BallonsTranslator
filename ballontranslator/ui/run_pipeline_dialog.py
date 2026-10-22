@@ -350,6 +350,7 @@ class RunPipelineDialog(QDialog):
     RUN = 1
     CONTINUE = 2
     RENDER = 3
+    FONT_SIZE = 4
     translate_source_changed = Signal(str)
     translate_target_changed = Signal(str)
     module_selected = Signal(str, str)
@@ -405,7 +406,7 @@ class RunPipelineDialog(QDialog):
         title_row.addSpacing(12)
         self.workflow_selector = BottomBorderComboBox(surface)
         self.workflow_selector.setObjectName('RunPipelineWorkflowSelector')
-        self.workflow_selector.addItems((self.tr('Pipeline'), self.tr('Rendering')))
+        self.workflow_selector.addItems((self.tr('Pipeline'), self.tr('Rendering'), self.tr('Font Size')))
         pipeline_mode = str(pcfg.run_pipeline_mode).lower()
         mode_indexes = {'pipeline': 0, 'rendering': 1}
         self.workflow_selector.setCurrentIndex(mode_indexes.get(pipeline_mode, 0))
@@ -421,6 +422,7 @@ class RunPipelineDialog(QDialog):
         self.content_stack.setObjectName('RunPipelineContentStack')
         self.content_stack.addWidget(self._build_pipeline_page())
         self.content_stack.addWidget(self._build_rendering_page())
+        self.content_stack.addWidget(self._build_font_size_page())
 
         self.content_dock = QDockWidget(surface)
         self.content_dock.setObjectName('RunPipelineContentDock')
@@ -453,6 +455,10 @@ class RunPipelineDialog(QDialog):
         self.render_button.clicked.connect(self._finish_render)
         self.render_button.hide()
         button_row.addWidget(self.render_button)
+        self.font_size_button = QPushButton(self.tr('Recalculate Font Sizes'), surface)
+        self.font_size_button.setObjectName('RunPipelinePrimaryButton')
+        self.font_size_button.clicked.connect(self._finish_font_size)
+        button_row.addWidget(self.font_size_button)
         layout.addLayout(button_row)
 
         self.workflow_selector.currentIndexChanged.connect(self._set_pipeline_page)
@@ -467,6 +473,9 @@ class RunPipelineDialog(QDialog):
 
     def _finish_continue(self, _checked: bool = False) -> None:
         self.done(self.CONTINUE)
+
+    def _finish_font_size(self, _checked: bool = False) -> None:
+        self.done(self.FONT_SIZE)
 
     def _finish_render(self, _checked: bool = False) -> None:
         self.done(self.RENDER)
@@ -1414,7 +1423,8 @@ class RunPipelineDialog(QDialog):
         pages = self._project_page_names()
         if not pages:
             return []
-        return pages[self.range_start.value() - 1 : self.range_end.value()]
+        selector = self.font_size_range if self.workflow_selector.currentIndex() == 2 else self.page_range_progress
+        return pages[selector.range_start.value() - 1 : selector.range_end.value()]
 
     def _on_page_range_changed(self, start: int, end: int):
         type(self)._page_range = (start, end)
@@ -1584,16 +1594,37 @@ class RunPipelineDialog(QDialog):
         layout.addStretch()
         return page
 
+    def _build_font_size_page(self) -> QWidget:
+        page = QWidget(self)
+        layout = QVBoxLayout(page)
+        description = QLabel(self.tr(
+            'Recalculate sizes using the original scan and each text block’s current font. '
+            'Keep translations and text boxes. Discard uniform rich text after successful recalculation. Skip blocks with local rich-text formatting, active effects or transforms. Split blocks sharing source lines are measured only inside their current boxes. No detection, OCR or inpainting. '
+            'Updating the current page resets its text undo history.'
+        ), page)
+        description.setWordWrap(True)
+        layout.addWidget(description)
+        start, end = type(self)._page_range
+        self.font_size_range = PageRangeProgressWidget(
+            self._project_page_names(), start=start, end=end, parent=page,
+        )
+        self.font_size_range.range_changed.connect(self._on_page_range_changed)
+        layout.addWidget(self.font_size_range)
+        layout.addStretch()
+        return page
+
     def _set_pipeline_page(self, index: int, persist: bool = True):
         rendering = index == 1
-        if persist:
+        if persist and index != 2:
             pcfg.run_pipeline_mode = 'rendering' if rendering else 'pipeline'
-        self.content_stack.setCurrentIndex(1 if rendering else 0)
-        self.run_button.setVisible(not rendering)
-        self.continue_button.setVisible(not rendering)
+        self.content_stack.setCurrentIndex(index)
+        self.run_button.setVisible(index == 0)
+        self.continue_button.setVisible(index == 0)
         self.render_button.setVisible(rendering)
         self.render_button.setDefault(rendering)
-        self.continue_button.setDefault(not rendering)
+        self.continue_button.setDefault(index == 0)
+        self.font_size_button.setVisible(index == 2)
+        self.font_size_button.setDefault(index == 2)
         self._fit_to_current_workflow()
 
     def _on_render_without_text_style_update_changed(self, checked: bool):

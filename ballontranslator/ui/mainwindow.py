@@ -65,7 +65,10 @@ from .text_engine.effects.paint import (
 )
 from .text_engine.pipeline_formatting import (
     AutoTateChuYokoThread,
+    FontSizeRecalculationThread,
     apply_auto_tate_chu_yoko,
+    apply_source_font_size_calibration,
+    preserve_source_font_size,
 )
 from .framelesswindow import FramelessWindow, FramelessMoveResize
 from .drawing_commands import RunBlkTransCommand
@@ -119,6 +122,17 @@ class PageListView(QListWidget):
         return super().contextMenuEvent(e)
 
 mainwindow_cls = Widget if shared.HEADLESS else FramelessWindow
+
+
+class _FontSizeRecalculationProgressBox(ProgressMessageBox):
+    def reject(self) -> None:
+        self.on_stop_clicked()
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        # 완료 전에 모달을 해제하면 다른 프로젝트에 결과가 돌아갈 수 있다.
+        # 중단 요청만 보내고 worker가 완료할 때까지 진행창을 유지한다.
+        event.ignore()
+        self.on_stop_clicked()
 
 
 class MainWindow(mainwindow_cls):
@@ -222,6 +236,17 @@ class MainWindow(mainwindow_cls):
         self.update_thread.update_failed.connect(self.on_update_failed)
         self.update_progress_msgbox = ProgressMessageBox(self.tr('Updating: '), False, self)
         self._update_progress_visible = False
+        self.font_size_recalculation_thread = FontSizeRecalculationThread(self)
+        self.font_size_recalculation_progress = _FontSizeRecalculationProgressBox(self.tr('Font Size'), True, self)
+        self.font_size_recalculation_thread.progress_changed.connect(
+            self.font_size_recalculation_progress.updateTaskProgress
+        )
+        self.font_size_recalculation_thread.processing_finished.connect(
+            self.on_font_size_recalculation_finished
+        )
+        self.font_size_recalculation_progress.stop_clicked.connect(
+            self.font_size_recalculation_thread.request_stop
+        )
         self.auto_tate_chu_yoko_thread = AutoTateChuYokoThread(self)
         self.auto_tate_chu_yoko_progress = ProgressMessageBox(
             '',
@@ -905,6 +930,9 @@ class MainWindow(mainwindow_cls):
         # before the close-time dirty check and final config snapshot.
         self.st_manager.formatpanel.resolve_text_transform_edits_for_save()
         self.st_manager.formatpanel.stop_text_effect_generation_for_shutdown()
+        if self.font_size_recalculation_thread.isRunning():
+            self.font_size_recalculation_thread.request_stop()
+            self.font_size_recalculation_thread.wait()
         if self.auto_tate_chu_yoko_thread.isRunning():
             self.auto_tate_chu_yoko_thread.request_stop()
             self.auto_tate_chu_yoko_thread.wait()
@@ -1381,7 +1409,7 @@ class MainWindow(mainwindow_cls):
         from qtpy.QtWidgets import QMessageBox
         
         if self.imgtrans_proj.is_empty:
-            QMessageBox.warning(self, "警告", "请先打开一个项目")
+            QMessageBox.warning(self, self.tr('Warning'), self.tr('Open a project first.'))
             return
         
         config = self.merge_dialog.get_config()
@@ -1392,17 +1420,17 @@ class MainWindow(mainwindow_cls):
             
             current_img = self.imgtrans_proj.current_img
             if not current_img:
-                QMessageBox.warning(self, "警告", "没有当前文件")
+                QMessageBox.warning(self, self.tr('Warning'), self.tr('No current page.'))
                 return
             
             # 直接从内存获取当前页面的文本框
             if current_img not in self.imgtrans_proj.pages:
-                QMessageBox.warning(self, "警告", "当前页面数据不存在")
+                QMessageBox.warning(self, self.tr('Warning'), self.tr('Current page data is missing.'))
                 return
             
             textblocks = self.imgtrans_proj.pages[current_img]
             if not textblocks:
-                QMessageBox.warning(self, "提示", "当前页面没有文本框")
+                QMessageBox.warning(self, self.tr('Notice'), self.tr('The current page has no text boxes.'))
                 return
             
             # 将 TextBlock 对象转换为字典格式（merger 需要字典）
@@ -1437,28 +1465,28 @@ class MainWindow(mainwindow_cls):
                 self.canvas.updateCanvas()
                 self.st_manager.updateSceneTextitems()
                 final_count = len(final_shapes)
-                QMessageBox.information(self, "成功", f"合并完成: 框数 {initial_count} -> {final_count} (减少了 {initial_count - final_count} 个)")
+                QMessageBox.information(self, self.tr('Success'), self.tr('Merge complete: {before} → {after} boxes ({removed} removed).').format(before=initial_count, after=final_count, removed=initial_count - final_count))
             else:
                 # 提供更详细的提示
                 labels = set(s.get('label', '') for s in initial_shapes)
-                detail_msg = f"未发生任何合并。\n共有 {initial_count} 个文本框。\n标签类型: {', '.join(labels) or '无'}\n\n"
-                detail_msg += "建议：\n"
-                detail_msg += "1. 尝试增大最大间隙值（如 100-200）\n"
-                detail_msg += "2. 降低最小重叠比例（如 50-70%）\n"
-                detail_msg += "3. 取消勾选'启用排除合并的标签'\n"
-                detail_msg += "4. 检查标签是否在黑名单中"
-                QMessageBox.warning(self, "提示", detail_msg)
+                detail_msg = self.tr('No boxes were merged.\nText boxes: {count}\nLabels: {labels}\n\n').format(count=initial_count, labels=', '.join(labels) or self.tr('None'))
+                detail_msg += self.tr('Suggestions:\n')
+                detail_msg += self.tr('1. Increase the maximum gap (for example, 100–200).\n')
+                detail_msg += self.tr('2. Reduce the minimum overlap (for example, 50–70%).\n')
+                detail_msg += self.tr('3. Disable label exclusion.\n')
+                detail_msg += self.tr('4. Check whether the label is excluded.')
+                QMessageBox.warning(self, self.tr('Notice'), detail_msg)
         else:
             # 对所有文件运行
             img_list = list(self.imgtrans_proj.pages.keys())
             if not img_list:
-                QMessageBox.warning(self, "警告", "项目中没有图片")
+                QMessageBox.warning(self, self.tr('Warning'), self.tr('The project has no images.'))
                 return
             
             # 使用项目的 JSON 文件路径
             json_path = self.imgtrans_proj.proj_path
             if not json_path or not osp.exists(json_path):
-                QMessageBox.warning(self, "警告", f"找不到项目 JSON 文件: {json_path}")
+                QMessageBox.warning(self, self.tr('Warning'), self.tr('Project JSON file not found: {path}').format(path=json_path))
                 return
             
             # 使用后台线程执行合并
@@ -1510,7 +1538,7 @@ class MainWindow(mainwindow_cls):
         
         # 显示结果
         total = success_count + fail_count
-        QMessageBox.information(self, "完成", f"区域合并完成\n成功: {success_count}/{total}\n失败: {fail_count}/{total}")
+        QMessageBox.information(self, self.tr('Finished'), self.tr('Region merge complete\nSucceeded: {success}/{total}\nFailed: {failed}/{total}').format(success=success_count, failed=fail_count, total=total))
 
     def on_req_update_pagetext(self):
         if self.canvas.text_change_unsaved():
@@ -1618,9 +1646,9 @@ class MainWindow(mainwindow_cls):
     def manual_save(self) -> None:
         if self.imgtrans_proj.directory is not None:
             LOGGER.debug('Manually saving...')
-            self.saveCurrentPage(update_scene_text=True, save_proj=True, restore_interface=True, save_rst_only=False)
+            self.saveCurrentPage(update_scene_text=True, save_proj=True, restore_interface=True, save_rst_only=False, save_history=True)
 
-    def saveCurrentPage(self, update_scene_text=True, save_proj=True, restore_interface=False, save_rst_only=False, keep_exist_as_backup=False):
+    def saveCurrentPage(self, update_scene_text: bool = True, save_proj: bool = True, restore_interface: bool = False, save_rst_only: bool = False, keep_exist_as_backup: bool = False, save_history: bool = False) -> None:
         
         if not self.imgtrans_proj.img_valid:
             return
@@ -1660,7 +1688,7 @@ class MainWindow(mainwindow_cls):
 
         if save_proj:
             try:
-                self.imgtrans_proj.save(keep_exist_as_backup=keep_exist_as_backup)
+                self.imgtrans_proj.save(keep_exist_as_backup=keep_exist_as_backup, save_history=save_history)
                 self._llm_context_dirty = False
                 if not save_rst_only:
                     mask_path = self.imgtrans_proj.get_mask_path()
@@ -2045,13 +2073,18 @@ class MainWindow(mainwindow_cls):
                     blk.fontformat.standard_vertical_roman_alignment = (
                         gf.standard_vertical_roman_alignment
                     )
+                    if not override_fnt_size and (enable_detect or enable_translate):
+                        apply_source_font_size_calibration(blk, pcfg.module)
                     primary = primary_stroke(blk.fontformat.text_effects)
                     sw = (
                         primary.width
                         if primary is not None and not primary.is_neutral()
                         else 0.0
                     )
-                    if sw > 0 and enable_ocr and enable_detect and not override_fnt_size:
+                    # The detector option preserves source lettering size,
+                    # including when the selected style adds a stroke.
+                    if (sw > 0 and enable_ocr and enable_detect and not override_fnt_size
+                            and not preserve_source_font_size(blk, pcfg.module)):
                         blk.font_size = blk.font_size / (1 + sw)
 
                     # Apply the complete global text-transform stack.
@@ -2122,6 +2155,72 @@ class MainWindow(mainwindow_cls):
         for blk in blkitem_list:
             pairw_list.append(self.st_manager.pairwidget_list[blk.idx])
         self.canvas.push_undo_command(RunBlkTransCommand(self.canvas, blkitem_list, pairw_list, mode))
+
+    def recalculate_project_font_sizes(self, pages: List[str]) -> None:
+        if (self.imgtrans_proj.is_empty or self.font_size_recalculation_thread.isRunning()
+                or self.module_manager.imgtrans_thread.isRunning()
+                or self.auto_tate_chu_yoko_thread.isRunning()):
+            return
+        self.st_manager.updateTextBlkList()
+        selected = {name: self.imgtrans_proj.pages[name] for name in pages
+                    if name in self.imgtrans_proj.pages}
+        if not selected:
+            return
+        # 재평가 직전의 최신 편집을 이력에 한 번 보존한다.
+        try:
+            self.imgtrans_proj.save()
+            self.imgtrans_proj.backup()
+        except Exception as error:
+            create_error_dialog(error, self.tr('Failed to save project.'), 'ProjectSaveFailed')
+            return
+        self.font_size_recalculation_progress.zero_progress()
+        if self.font_size_recalculation_thread.start_processing(
+            self.imgtrans_proj.directory, selected, pcfg.module,
+        ):
+            self.font_size_recalculation_progress.show_fitted()
+
+    def on_font_size_recalculation_finished(
+        self, changes: tuple, skipped: int, failures: tuple,
+    ) -> None:
+        changed_ids = set()
+        for block, result in changes:
+            block.font_size = result.font_size
+            block._detected_font_size = result._detected_font_size
+            block._source_font_size_uses_character_extent = result._source_font_size_uses_character_extent
+            block._source_font_size_uses_ink_area = result._source_font_size_uses_ink_area
+            block._source_font_size_uses_squared_area = result._source_font_size_uses_squared_area
+            block.rich_text = ''
+            changed_ids.add(id(block))
+        if changes:
+            visible = [item for item in self.st_manager.textblk_item_list if id(item.blk) in changed_ids]
+            if visible:
+                # 크기 변경 때문에 장면/편집 목록을 비우지 않는다. 기존 문서와
+                # 항목을 갱신하여 중간 빈 목록이 프로젝트로 동기화될 틈을 없앤다.
+                self.canvas.clear_text_stack()
+                for item in visible:
+                    # setRect는 부모 좌표를 받는다. 로컬 (0, 0)을 넘기면
+                    # 모든 박스가 원점으로 이동하므로 절대 논리 박스를 보존한다.
+                    rect = item.absBoundingRect(qrect=True)
+                    blocked = item.block_change_signal
+                    item.block_change_signal = True
+                    try:
+                        item.set_fontformat(item.blk.fontformat.deepcopy(), set_char_format=True)
+                        item.setRect(rect, update_blk_rect=False)
+                        item.document().clearUndoRedoStacks()
+                    finally:
+                        item.block_change_signal = blocked
+                        item.updateUndoSteps()
+                    edit = self.st_manager.pairwidget_list[item.idx].e_trans
+                    edit.document().clearUndoRedoStacks()
+                    edit.updateUndoSteps()
+            self.canvas.setProjSaveState(True)
+        self.font_size_recalculation_progress.hide()
+        message = self.tr('Font sizes updated: {updated}. Skipped: {skipped}.').format(
+            updated=len(changes), skipped=skipped,
+        )
+        if failures:
+            message += '\n' + self.tr('Failed pages: ') + ', '.join(failures)
+        QMessageBox.information(self, self.tr('Font Size'), message)
 
     def apply_auto_tate_chu_yoko_to_project(self) -> None:
         if (
@@ -2199,6 +2298,9 @@ class MainWindow(mainwindow_cls):
         )
         try:
             result = dialog.exec_()
+            if result == RunPipelineDialog.FONT_SIZE:
+                self.recalculate_project_font_sizes(dialog.selected_pages())
+                return
             if result == RunPipelineDialog.CONTINUE:
                 self._run_imgtrans_wo_textstyle_update = False
                 self.on_run_imgtrans(continue_mode=True)
@@ -2280,11 +2382,9 @@ class MainWindow(mainwindow_cls):
             if has_explicit_range:
                 pipeline_pages = requested_pages
 
-        if enable_detect:
-            for page in requested_pages:
-                if not pcfg.module.keep_exist_textlines and not continue_mode:
-                    self.imgtrans_proj.pages[page].clear()
-        else:
+        # 모듈 준비가 취소되거나 검출이 실패해도 기존 텍스트를 보존한다.
+        # 검출 worker가 성공한 결과를 받았을 때만 해당 페이지를 교체한다.
+        if not enable_detect:
             self.st_manager.updateTextBlkList()
             for page_name in requested_pages:
                 blklist = self.imgtrans_proj.pages[page_name]

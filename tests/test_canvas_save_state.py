@@ -23,7 +23,10 @@ from ballontranslator.ui.text_engine.editing.manager import (
 )
 from ballontranslator.ui.text_engine.editing.widgets import SourceTextEdit
 from ballontranslator.utils import config as C, shared
-from ballontranslator.utils.fontformat import FontFormat
+from ballontranslator.utils.fontformat import (
+    FontFormat, ProjectiveTextTransform, TextTransformStack,
+)
+from ballontranslator.utils.text_effects import StrokeEffect, TextEffectStack
 from ballontranslator.utils.proj_imgtrans import ProjImgTrans
 from ballontranslator.utils.textblock import TextBlock
 
@@ -96,6 +99,36 @@ class CanvasSaveStateTests(unittest.TestCase):
         self.canvas.update_saved_undostep()
         self.canvas.setProjSaveState(False)
 
+    def test_resize_handle_selection_does_not_create_detached_windows(self) -> None:
+        import gc
+
+        self.item.fontformat.text_transform = TextTransformStack((ProjectiveTextTransform(),))
+        self.item.fontformat.text_effects = TextEffectStack(effects=(StrokeEffect(),))
+        self.manager._update_selection_panels([self.item])
+        format_panel = self.panel.formatpanel
+        retired = [
+            *format_panel.texttransform_panel.transform_panels,
+            *format_panel.texteffect_panel.effect_cards,
+        ]
+        self.assertTrue(retired)
+        references = [weakref.ref(widget) for widget in retired]
+        top_levels = set(QApplication.topLevelWidgets())
+        self.canvas.gv.setFocus()
+        self.app.processEvents()
+
+        self.manager.txtblkShapeControl.ctrlblockPressed()
+
+        self.assertFalse(set(QApplication.topLevelWidgets()) - top_levels)
+        self.assertTrue(all(widget.isHidden() for widget in retired))
+        self.item.setSelected(True)
+        self.assertIs(format_panel.textblk_item, self.item)
+        retired.clear()
+        top_levels.clear()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        self.app.processEvents()
+        gc.collect()
+        self.assertTrue(all(reference() is None for reference in references))
+
     def _revisit_page(self) -> None:
         MainWindow.conditional_save(self.host)
         self.host.saveCurrentPage.assert_called_once()
@@ -115,6 +148,43 @@ class CanvasSaveStateTests(unittest.TestCase):
         edit.setFocus()
         self.app.processEvents()
         return edit
+
+    def test_font_size_completion_preserves_blocks_through_save_and_page_change(self) -> None:
+        from copy import deepcopy
+
+        self.item.setRect([70, 40, 300, 120])
+        original_rect = self.item.absBoundingRect()
+        original = self.project.pages['01.png'][0]
+        other = TextBlock([0, 0, 100, 100], _bounding_rect=[0, 0, 100, 100],
+                          translation='Other page', text=['other source'])
+        self.project.pages['02.png'] = [other]
+        self.host.st_manager = self.manager
+        self.host.font_size_recalculation_progress = Mock()
+        self.host.tr = lambda text: text
+        result = deepcopy(original)
+        result.font_size = 37
+        other_result = deepcopy(other)
+        other_result.font_size = 31
+        with patch('ballontranslator.ui.mainwindow.QMessageBox.information'):
+            MainWindow.on_font_size_recalculation_finished(
+                self.host, ((original, result), (other, other_result)), 0, (),
+            )
+        self.assertEqual(len(self.project.pages['01.png']), 1)
+        self.assertEqual(len(self.project.pages['02.png']), 1)
+        self.assertIs(self.manager.textblk_item_list[0], self.item)
+        self.assertEqual(self.item.absBoundingRect(), original_rect)
+        self.assertEqual(self.manager.textblk_item_list[0].toPlainText(), 'Hello\nworld')
+        self._save_page()
+        self.manager.clearSceneTextitems(SceneTextReplacementReason.PAGE_CHANGE)
+        self.project.set_current_img('02.png')
+        self.canvas.clear_undostack(update_saved_step=True)
+        self.manager.populateSceneTextitems()
+        self._save_page()
+        reopened = ProjImgTrans(self.directory.name)
+        self.assertEqual(reopened.pages['01.png'][0].translation, 'Hello\nworld')
+        self.assertEqual(reopened.pages['02.png'][0].translation, 'Other page')
+        self.assertEqual(reopened.pages['01.png'][0].font_size, 37)
+        self.assertEqual(reopened.pages['02.png'][0].font_size, 31)
 
     def test_replacement_color_is_saved_when_undo_branch_is_replaced(self) -> None:
         self.item.setFontColor((255, 0, 0))

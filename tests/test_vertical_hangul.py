@@ -1,6 +1,7 @@
 import os
 import unittest
 import unicodedata
+from pathlib import Path
 from unittest.mock import patch
 
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
@@ -22,6 +23,42 @@ class VerticalHangulTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.app = QApplication.instance() or QApplication([])
+
+    def test_binggrae_ellipsis_does_not_overlap_preceding_hangul(self) -> None:
+        font_path = Path(__file__).resolve().parents[1] / 'fonts' / 'Binggrae.ttf'
+        font_id = QFontDatabase.addApplicationFont(str(font_path))
+        self.assertGreaterEqual(font_id, 0)
+        self.addCleanup(QFontDatabase.removeApplicationFont, font_id)
+        for standard in (True, False):
+            for text in ('음…', '음……', '음…음'):
+                with self.subTest(standard=standard, text=text):
+                    item = TextBlkItem(TextBlock(
+                        xyxy=[0, 0, 169, 500], _bounding_rect=[0, 0, 169, 500],
+                        translation=text, text_layout_version=1,
+                        fontformat={
+                            'font_family': 'Binggrae', 'font_size': 59,
+                            'font_weight': 500, 'vertical': False,
+                            'letter_spacing': 1.0,
+                            'standard_vertical_roman_alignment': standard,
+                        },
+                    ), 0)
+                    self.addCleanup(item.deleteLater)
+                    item.setVertical(True)
+                    first = self._ink(item, 0)
+                    ellipsis = self._ink(item, 1)
+                    self.assertGreaterEqual(ellipsis.top(), first.bottom() - 0.1)
+                    block = item.document().firstBlock()
+                    line = block.layout().lineForTextPosition(1)
+                    cells = item.layout._vertical_line_cells(block, line.lineNumber())
+                    self.assertGreaterEqual(ellipsis.top(), cells[0][2] - 0.1)
+                    self.assertIn(item.layout.hitTest(
+                        ellipsis.center(), Qt.HitTestAccuracy.FuzzyHit,
+                    ), (1, 2))
+                    item.setVertical(False)
+                    item.setVertical(True)
+                    self.assertGreaterEqual(
+                        self._ink(item, 1).top(), self._ink(item, 0).bottom() - 0.1,
+                    )
 
     def test_script_boundary(self) -> None:
         for text in ('아', '아', 'ㅋㅋ', '힣', 'ﾡ'):

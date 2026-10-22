@@ -188,10 +188,12 @@ class TextTransformPanel(PanelArea):
             ),
         )
 
-    def _clear_transform_panels(self):
+    def _clear_transform_panels(self) -> None:
         for panel in self.transform_panels:
             self.transform_rows_layout.removeWidget(panel)
-            panel.setParent(None)
+            # Keep retired controls owned until deferred deletion; detaching
+            # them creates temporary native top-level windows on Windows.
+            panel.hide()
             panel.deleteLater()
         self.transform_panels = []
         self._transform_panel_types = ()

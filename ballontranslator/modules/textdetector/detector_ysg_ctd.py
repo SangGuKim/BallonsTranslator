@@ -94,6 +94,18 @@ class YSGYoloCTDDetector(TextDetectorBase):
         'IoU threshold': {
             'display_name': 'IoU阈值', 'type': 'line_editor', 'value': 0.5,
         },
+        'calibrate_source_font_size': {
+            'value': False,
+            'type': 'checkbox',
+            'display_name': 'Calibrate Source Font Size',
+            'description': 'Match source ink size to the selected CJK font glyphs. Enable Preserve Source Font Size to prevent later layout shrinking.',
+        },
+        'preserve_source_font_size': {
+            'value': False,
+            'type': 'checkbox',
+            'display_name': 'Preserve Source Font Size',
+            'description': 'Prevent automatic layout and stroke adjustment from shrinking the source-based font size.',
+        },
         'font size multiplier': {
             'display_name': '字号乘数', 'type': 'line_editor', 'value': 1.,
         },

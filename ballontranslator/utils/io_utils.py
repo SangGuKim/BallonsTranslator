@@ -7,7 +7,7 @@ import traceback
 
 from .logger import logger as LOGGER
 import requests
-from PIL import Image
+from PIL import Image, ImageOps
 import PIL
 import cv2
 import numpy as np
@@ -153,14 +153,24 @@ def find_all_files_recursive(tgt_dir: Union[List, str], ext: Union[List, set], e
     
     return filelst
 
-def imread(imgpath, read_type=cv2.IMREAD_COLOR, max_retry_limit=5, retry_interval=0.1):
+def imread(
+    imgpath: Union[str, os.PathLike], read_type: int = cv2.IMREAD_COLOR,
+    max_retry_limit: Union[int, None] = 5, retry_interval: float = 0.1,
+) -> Union[np.ndarray, None]:
+    """Decode display-oriented pixels, including EXIF rotation and mirroring.
+
+    >>> imread('missing-image.webp') is None
+    True
+    """
     if not osp.exists(imgpath):
         return None
     
     num_tries = 0
     while True:
         try:
-            img = Image.open(imgpath)
+            with Image.open(imgpath) as source:
+                # 방향을 픽셀에 반영하여 캔버스, 추론, 저장 이미지의 좌표계를 통일한다.
+                img = ImageOps.exif_transpose(source)
             if img.mode == 'CMYK':
                 img = img.convert('RGB')
             elif img.mode == 'P':

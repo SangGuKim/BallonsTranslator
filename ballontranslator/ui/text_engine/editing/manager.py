@@ -13,6 +13,7 @@ except:
     from qtpy.QtGui import QUndoCommand
 
 from ..item import TextBlkItem, TextBlock
+from ..pipeline_formatting import preserve_source_font_size
 from ...canvas import Canvas
 from .widgets import TransTextEdit, SourceTextEdit, TransPairWidget, TextEditListScrollArea, QVBoxLayout, Widget
 from ballontranslator.utils.fontformat import FontFormat
@@ -874,7 +875,11 @@ class SceneTextManager(QObject):
             self._update_selection_panels([item])
         session.activate_last_projective(item)
 
-    def layout_textblk(self, blkitem: TextBlkItem, text: str = None, mask: np.ndarray = None, bounding_rect: List = None, region_rect: List = None):
+    def layout_textblk(
+        self, blkitem: TextBlkItem, text: Optional[str] = None,
+        mask: Optional[np.ndarray] = None, bounding_rect: Optional[List[int]] = None,
+        region_rect: Optional[List[int]] = None,
+    ) -> Optional[bool]:
         
         '''
         auto text layout, vertical writing is not supported yet.
@@ -925,6 +930,7 @@ class SceneTextManager(QObject):
             mask, ballon_area, mask_xyxy, region_rect = extract_ballon_region(img, bounding_rect, enlarge_ratio=enlarge_ratio, cal_region_rect=True)
         else:
             mask_xyxy = [bounding_rect[0], bounding_rect[1], bounding_rect[0]+bounding_rect[2], bounding_rect[1]+bounding_rect[3]]
+            ballon_area = int(np.count_nonzero(mask))
         
         words, delimiter = seg_text(text, pcfg.module.translate_target)
         if len(words) < 1:
@@ -945,7 +951,11 @@ class SceneTextManager(QObject):
 
         adaptive_fntsize = False
         resize_ratio = 1
-        if self.auto_textlayout_flag and pcfg.let_fntsize_flag == 0 and pcfg.let_autolayout_flag:
+        # The detector option keeps source-sized lettering independent of
+        # translation length while leaving wrapping and placement active.
+        if (self.auto_textlayout_flag and pcfg.let_fntsize_flag == 0
+                and pcfg.let_autolayout_flag
+                and not preserve_source_font_size(blkitem.blk, pcfg.module)):
             if blkitem.blk.src_is_vertical and blkitem.blk.vertical != blkitem.blk.src_is_vertical:
                 adaptive_fntsize = True
                 area_ratio = ballon_area / text_area

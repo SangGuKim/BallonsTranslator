@@ -433,7 +433,7 @@ class RunPipelineDialogTests(unittest.TestCase):
         self.assertEqual(selector.currentIndex(), 0)
         self.assertEqual(
             [selector.itemText(i) for i in range(selector.count())],
-            ['Pipeline', 'Rendering'],
+            ['Pipeline', 'Rendering', 'Font Size'],
         )
         module_buttons = dialog.findChildren(PipelineModuleButton, 'RunPipelineModuleButton')
         self.assertEqual(len(module_buttons), 4)
@@ -530,8 +530,8 @@ class RunPipelineDialogTests(unittest.TestCase):
         module_buttons[3].click()
         self.assertFalse(dialog.settings_sections[3].isHidden())
 
-        range_start = dialog.findChild(QSpinBox, 'RunPipelineRangeStart')
-        range_end = dialog.findChild(QSpinBox, 'RunPipelineRangeEnd')
+        range_start = dialog.range_start
+        range_end = dialog.range_end
         range_start.setValue(2)
         range_end.setValue(3)
         self.assertEqual(dialog.selected_pages(), ['002.png', '003.png'])
@@ -1099,6 +1099,7 @@ class RunPipelineDialogTests(unittest.TestCase):
             RUN = RunPipelineDialog.RUN
             CONTINUE = RunPipelineDialog.CONTINUE
             RENDER = RunPipelineDialog.RENDER
+            FONT_SIZE = RunPipelineDialog.FONT_SIZE
             result = 0
             preserve_style = False
             pages = ['page-2']
@@ -1197,7 +1198,7 @@ class RunPipelineDialogTests(unittest.TestCase):
                 for action in title_bar.toolsToolBtn.menu().actions()
                 if not action.isSeparator()
             }.issuperset({
-                '区域合并工具',
+                'Region Merge Tool',
                 'Photoshop Bridge',
                 'Path Reorder',
                 'Font Exclusion',
@@ -1293,6 +1294,7 @@ class RunPipelineDialogTests(unittest.TestCase):
             '002.png': {'finish_code': RunStatus.FIN_ALL},
             '003.png': {'finish_code': RunStatus.FIN_ALL},
         }
+        original_blocks = list(project.pages['002.png'])
         calls = []
         owner = SimpleNamespace(
             backup_blkstyles=[],
@@ -1325,7 +1327,7 @@ class RunPipelineDialogTests(unittest.TestCase):
             },
         )
         self.assertEqual(len(project.pages['001.png']), 1)
-        self.assertEqual(project.pages['002.png'], [])
+        self.assertEqual(project.pages['002.png'], original_blocks)
         self.assertEqual(len(project.pages['003.png']), 1)
         self.assertEqual(calls, [((['002.png'],), {'render_only': False})])
 

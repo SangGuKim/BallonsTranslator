@@ -3,6 +3,7 @@ import hashlib
 import io
 import os, json, shutil, re, docx, docx2txt, piexif, cv2
 import tempfile
+from datetime import datetime, timezone
 import warnings
 from docx.shared import Inches
 from docx import Document
@@ -1001,21 +1002,39 @@ class ProjImgTrans:
         self.save()
         self._load_identity = object()
         
-    def save(self, keep_exist_as_backup=False):
+    def save(self, keep_exist_as_backup: bool = False, *, save_history: bool = False) -> None:
+        """Atomically save a project, optionally retaining the previous JSON."""
         if not osp.exists(self.directory):
             raise ProjectDirNotExistException
-        tmp_save_tgt = self.proj_path + '.tmp'
+        payload = json.dumps(self.to_dict(), ensure_ascii=False, cls=TextBlkEncoder).encode('utf-8')
+        previous = None
+        if osp.exists(self.proj_path):
+            with open(self.proj_path, 'rb') as stream:
+                previous = stream.read()
+            if previous == payload:
+                return
+        # 고유 임시 파일을 먼저 완성한다. 이력 보존이 실패하면 원본을
+        # 덮어쓰지 않으며, 기존 .tmp나 사용자의 백업 파일도 이동하지 않는다.
+        descriptor, staging = tempfile.mkstemp(
+            prefix='.project-save-', suffix='.tmp', dir=osp.dirname(self.proj_path),
+        )
         try:
-            with open(tmp_save_tgt, "w", encoding="utf-8") as f:
-                f.write(json.dumps(self.to_dict(), ensure_ascii=False, cls=TextBlkEncoder))
-        except:
-            raise Exception(f'Failed to write {self.to_dict()}')
-        if osp.exists(self.proj_path) and keep_exist_as_backup:
-            os.replace(self.proj_path, self.proj_path + '.backup')
-            os.replace(tmp_save_tgt, self.proj_path)
-        else:
-            os.replace(tmp_save_tgt, self.proj_path)
-        LOGGER.debug(f'project saved')
+            with os.fdopen(descriptor, 'wb') as stream:
+                stream.write(payload)
+                stream.flush()
+                os.fsync(stream.fileno())
+            if previous is not None:
+                if save_history:
+                    self.backup()
+                if keep_exist_as_backup:
+                    legacy = self.proj_path + '.backup'
+                    # 기존 이름을 계속 제공하되 원본 프로젝트는 먼저 옮기지 않는다.
+                    shutil.copy2(self.proj_path, legacy)
+            os.replace(staging, self.proj_path)
+        finally:
+            if osp.exists(staging):
+                os.unlink(staging)
+        LOGGER.debug('project saved')
 
     def to_dict(self) -> Dict:
         pages = self.pages.copy()
@@ -1100,8 +1119,11 @@ class ProjImgTrans:
             if imgname == self.current_img and self.img_array is not None:
                 h, w = self.img_array.shape[:2]
             else:
-                i = Image.open(osp.join(self.directory, imgname))
-                h, w = i.height, i.width
+                with Image.open(osp.join(self.directory, imgname)) as image:
+                    w, h = image.size
+                    # 픽셀을 다시 디코딩하지 않고 공통 로더의 회전 후 크기를 따른다.
+                    if image.getexif().get(274) in (5, 6, 7, 8):
+                        w, h = h, w
             ih, iw = inpainted.shape[:2]
             if ih != h or iw != w:
                 inpainted = Image.fromarray(inpainted).resize((w, h), resample=Image.Resampling.LANCZOS)
@@ -1117,8 +1139,34 @@ class ProjImgTrans:
                 ext = pcfg.imgsave_ext
         return osp.join(self.result_dir(), osp.splitext(imgname)[0]+ext)
         
-    def backup(self):
-        raise NotImplementedError
+    def backup(self, source_path: Optional[str] = None) -> Optional[str]:
+        """Archive an existing project JSON without changing its source.
+
+        History uses UTC timestamps and unique names; entries are never pruned.
+        The optional source preserves the legacy backup before its replacement.
+
+        >>> ProjImgTrans().backup() is None
+        True
+        """
+        source_path = source_path or self.proj_path
+        if source_path is None or not osp.isfile(source_path):
+            return None
+        history = osp.join(osp.dirname(self.proj_path), '.project_history', osp.basename(self.proj_path))
+        os.makedirs(history, exist_ok=True)
+        timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%d_%H-%M-%S_%fZ_')
+        prefix = ('legacy_' if source_path != self.proj_path else '') + timestamp
+        descriptor, staging = tempfile.mkstemp(prefix=prefix, suffix='.json.tmp', dir=history)
+        destination = staging[:-4]
+        try:
+            with os.fdopen(descriptor, 'wb') as target, open(source_path, 'rb') as source:
+                shutil.copyfileobj(source, target)
+                target.flush()
+                os.fsync(target.fileno())
+            os.replace(staging, destination)
+        finally:
+            if osp.exists(staging):
+                os.unlink(staging)
+        return destination
 
     @property
     def is_empty(self):

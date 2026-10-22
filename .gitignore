@@ -69,3 +69,6 @@ data/dictionaries/
 custom_modules/*
 !custom_modules/put your custom modules here.txt
 !custom_modules/trans_custom_copy_source.py
+# Local project save history and atomic-save staging files
+**/.project_history/
+**/.project-save-*.tmp

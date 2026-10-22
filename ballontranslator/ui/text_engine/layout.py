@@ -183,18 +183,57 @@ class CharFontFormat:
         )
 
     @cached_property
+    def _cell_rects(self) -> Tuple[QRectF, QRectF]:
+        """Use Hangul cells only when the face lacks the legacy CJK probes.
+
+        >>> isinstance(CharFontFormat._cell_rects, cached_property)
+        True
+        """
+        raw_font = QRawFont.fromFont(self.font)
+        has_cjk_probe = raw_font.isValid() and any(
+            raw_font.supportsCharacter(ord(char)) for char in '啊木'
+        )
+        characters = tuple(
+            char for char in '한글음'
+            if not has_cjk_probe and raw_font.isValid()
+            and raw_font.familyName().casefold() == self.family.casefold()
+            and raw_font.supportsCharacter(ord(char))
+        )
+        # 한글 전용 서체의 셀을 대체 한자 폰트의 경계로 결정하지 않는다.
+        # 지원 문자가 없을 때만 기존 CJK 대체 측정을 유지한다.
+        if not characters:
+            tight_first, bounds_first = get_punc_rect(
+                '啊', self.family, self.size, self.weight, self.font.italic()
+            )
+            tight_second, bounds_second = get_punc_rect(
+                '木', self.family, self.size, self.weight, self.font.italic()
+            )
+            return tuple(
+                QRectF(
+                    min(first.left(), second.left()), second.top(),
+                    max(first.right(), second.right()) - min(first.left(), second.left()),
+                    second.height(),
+                )
+                for first, second in (
+                    (tight_first, tight_second), (bounds_first, bounds_second)
+                )
+            )
+        tight, bounds = QRectF(), QRectF()
+        for char in characters:
+            char_tight, char_bounds = get_punc_rect(
+                char, self.family, self.size, self.weight, self.font.italic()
+            )
+            tight = char_tight if tight.isEmpty() else tight.united(char_tight)
+            bounds = char_bounds if bounds.isEmpty() else bounds.united(char_bounds)
+        return tight, bounds
+
+    @cached_property
     def br(self) -> QRectF:
-        # return get_punc_rect('啊', self.family, self.size, self.weight, self.font.italic())[1]
-        _, br1 = get_punc_rect('啊', self.family, self.size, self.weight, self.font.italic())
-        _, br2 = get_punc_rect('木', self.family, self.size, self.weight, self.font.italic())
-        return QRectF(min(br1.left(), br2.left()), br2.top(), max(br1.right(), br2.right()) - min(br1.left(), br2.left()), br2.height())
+        return self._cell_rects[1]
 
     @cached_property
     def tbr(self) -> QRectF:
-        # return get_punc_rect('啊', self.family, self.size, self.weight, self.font.italic())[0]
-        br1, _ = get_punc_rect('啊', self.family, self.size, self.weight, self.font.italic())
-        br2, _ = get_punc_rect('木', self.family, self.size, self.weight, self.font.italic())
-        return QRectF(min(br1.left(), br2.left()), br2.top(), max(br1.right(), br2.right()) - min(br1.left(), br2.left()), br2.height())
+        return self._cell_rects[0]
 
     @cached_property
     def space_width(self) -> int:

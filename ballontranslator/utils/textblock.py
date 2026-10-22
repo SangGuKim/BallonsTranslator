@@ -122,6 +122,10 @@ class TextBlock:
     _bounding_rect: List = None
     src_is_vertical: bool = None
     _detected_font_size: float = -1
+    # 측정 기준을 baseline과 함께 저장해 이전 프로젝트의 폭 기준을 보존한다.
+    _source_font_size_uses_character_extent: bool = False
+    _source_font_size_uses_ink_area: bool = False
+    _source_font_size_uses_squared_area: bool = False
     det_model: str = None
     label: str = None # ysg yolo label
 
@@ -282,6 +286,18 @@ class TextBlock:
         self.fontformat.alignment = value
 
     def __post_init__(self) -> None:
+        if not isinstance(self._source_font_size_uses_squared_area, bool):
+            LOGGER.warning('Ignoring invalid source font squared area measurement flag %r.',
+                           self._source_font_size_uses_squared_area)
+            self._source_font_size_uses_squared_area = False
+        if not isinstance(self._source_font_size_uses_ink_area, bool):
+            LOGGER.warning('Ignoring invalid source font area measurement flag %r.',
+                           self._source_font_size_uses_ink_area)
+            self._source_font_size_uses_ink_area = False
+        if not isinstance(self._source_font_size_uses_character_extent, bool):
+            LOGGER.warning('Ignoring invalid source font size measurement flag %r.',
+                           self._source_font_size_uses_character_extent)
+            self._source_font_size_uses_character_extent = False
         self.text_alpha_mask = load_text_alpha_mask(self.text_alpha_mask)
         if self.xyxy is not None:
             self.xyxy = [int(num) for num in self.xyxy]

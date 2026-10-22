@@ -2900,6 +2900,114 @@ All existing translation results will be cleared!</source>
         <source>Keyword substitution for machine translation source text</source>
         <translation>원문에 대한 키워드 치환(전처리)</translation>
     </message>
+    <message>
+        <source>Warning</source>
+        <translation>경고</translation>
+    </message>
+    <message>
+        <source>Open a project first.</source>
+        <translation>먼저 프로젝트를 여십시오.</translation>
+    </message>
+    <message>
+        <source>No current page.</source>
+        <translation>현재 페이지가 없습니다.</translation>
+    </message>
+    <message>
+        <source>Current page data is missing.</source>
+        <translation>현재 페이지 데이터가 없습니다.</translation>
+    </message>
+    <message>
+        <source>Notice</source>
+        <translation>알림</translation>
+    </message>
+    <message>
+        <source>The current page has no text boxes.</source>
+        <translation>현재 페이지에 텍스트박스가 없습니다.</translation>
+    </message>
+    <message>
+        <source>Success</source>
+        <translation>완료</translation>
+    </message>
+    <message>
+        <source>Suggestions:
+</source>
+        <translation>다음 방법을 시도하십시오:
+</translation>
+    </message>
+    <message>
+        <source>1. Increase the maximum gap (for example, 100–200).
+</source>
+        <translation>1. 최대 간격을 늘리십시오 (예: 100~200).
+</translation>
+    </message>
+    <message>
+        <source>2. Reduce the minimum overlap (for example, 50–70%).
+</source>
+        <translation>2. 최소 겹침 비율을 낮추십시오 (예: 50~70%).
+</translation>
+    </message>
+    <message>
+        <source>3. Disable label exclusion.
+</source>
+        <translation>3. 라벨 병합 제외 옵션을 끄십시오.
+</translation>
+    </message>
+    <message>
+        <source>4. Check whether the label is excluded.</source>
+        <translation>4. 제외할 라벨 목록을 확인하십시오.</translation>
+    </message>
+    <message>
+        <source>The project has no images.</source>
+        <translation>프로젝트에 이미지가 없습니다.</translation>
+    </message>
+    <message>
+        <source>Finished</source>
+        <translation>완료</translation>
+    </message>
+    <message>
+        <source>Merge complete: {before} → {after} boxes ({removed} removed).</source>
+        <translation>병합 완료: 박스 {before}개 → {after}개 ({removed}개 감소).</translation>
+    </message>
+    <message>
+        <source>No boxes were merged.
+Text boxes: {count}
+Labels: {labels}
+
+</source>
+        <translation>병합된 박스가 없습니다.
+텍스트박스: {count}개
+라벨: {labels}
+
+</translation>
+    </message>
+    <message>
+        <source>None</source>
+        <translation>없음</translation>
+    </message>
+    <message>
+        <source>Project JSON file not found: {path}</source>
+        <translation>프로젝트 JSON 파일을 찾을 수 없습니다: {path}</translation>
+    </message>
+    <message>
+        <source>Region merge complete
+Succeeded: {success}/{total}
+Failed: {failed}/{total}</source>
+        <translation>영역 병합 완료
+성공: {success}/{total}
+실패: {failed}/{total}</translation>
+    </message>
+    <message>
+        <source>Font Size</source>
+        <translation>글자 크기</translation>
+    </message>
+    <message>
+        <source>Font sizes updated: {updated}. Skipped: {skipped}.</source>
+        <translation>폰트 크기 갱신: {updated}개. 건너뜀: {skipped}개.</translation>
+    </message>
+    <message>
+        <source>Failed pages: </source>
+        <translation>실패한 페이지: </translation>
+    </message>
 </context>
 <context>
     <name>ModuleManager</name>
@@ -3945,6 +4053,30 @@ All existing translation results will be cleared!</source>
         <location filename="../../ballontranslator/ui/module_parse_widgets.py" line="625"/>
         <source>No configurable param</source>
         <translation>설정 가능한 매개변수가 없습니다</translation>
+    </message>
+    <message>
+        <source>Match Source Character Area</source>
+        <translation>원문 글자 면적 맞춤</translation>
+    </message>
+    <message>
+        <source>Match representative character ink bounding-box areas during font calibration. Disable to use only the source line cross-section.</source>
+        <translation>대표 글자의 잉크 경계 면적을 기준으로 폰트 크기를 보정합니다. 끄면 원문 줄의 단면 크기만 사용합니다.</translation>
+    </message>
+    <message>
+        <source>Source: Squared Longest Side</source>
+        <translation>원문: 긴 변의 제곱 사용</translation>
+    </message>
+    <message>
+        <source>Measure source glyphs using their maximum squared longest side. Disable to use maximum ink bounding-box area.</source>
+        <translation>원문 글자의 긴 변 제곱의 최댓값을 측정합니다. 끄면 잉크 경계 사각형 면적의 최댓값을 사용합니다.</translation>
+    </message>
+    <message>
+        <source>Translation: Squared Longest Side</source>
+        <translation>번역문: 긴 변의 제곱 사용</translation>
+    </message>
+    <message>
+        <source>Measure rendered translated glyphs using their maximum squared longest side. Disable to use maximum ink bounding-box area.</source>
+        <translation>렌더링한 번역 글자의 긴 변 제곱의 최댓값을 측정합니다. 끄면 잉크 경계 사각형 면적의 최댓값을 사용합니다.</translation>
     </message>
 </context>
 <context>
@@ -5196,6 +5328,18 @@ Then restart Photoshop. Explorer will now open the source file and destination l
         <location filename="../../ballontranslator/ui/run_pipeline_dialog.py" line="1579"/>
         <source>Render without update text style</source>
         <translation>텍스트 스타일 업데이트 없이 렌더링</translation>
+    </message>
+    <message>
+        <source>Font Size</source>
+        <translation>글자 크기</translation>
+    </message>
+    <message>
+        <source>Recalculate Font Sizes</source>
+        <translation>폰트 크기 재평가</translation>
+    </message>
+    <message>
+        <source>Recalculate sizes using the original scan and each text block’s current font. Keep translations and text boxes. Discard uniform rich text after successful recalculation. Skip blocks with local rich-text formatting, active effects or transforms. Split blocks sharing source lines are measured only inside their current boxes. No detection, OCR or inpainting. Updating the current page resets its text undo history.</source>
+        <translation>원본 스캔과 각 텍스트박스의 현재 폰트로 크기를 다시 계산합니다. 번역문과 박스는 유지합니다. 재평가에 성공하면 전체에 동일한 리치텍스트 서식을 제거합니다. 부분 서식 또는 적용 중인 효과·변형이 있는 블록은 건너뜁니다. 원문 줄을 공유하는 분할 블록은 현재 박스 안에서만 측정합니다. 검출·OCR·인페인팅은 실행하지 않습니다. 현재 페이지를 갱신하면 해당 페이지의 텍스트 실행 취소 기록이 초기화됩니다.</translation>
     </message>
 </context>
 <context>
@@ -6536,6 +6680,10 @@ Then restart Photoshop. Explorer will now open the source file and destination l
         <source>Keyword substitution for machine translation source text</source>
         <translation>원문에 대한 키워드 치환(전처리)</translation>
     </message>
+    <message>
+        <source>Region Merge Tool</source>
+        <translation>영역 병합 도구</translation>
+    </message>
 </context>
 <context>
     <name>TorchInstallHelperDialog</name>
@@ -6815,6 +6963,186 @@ Then restart Photoshop. Explorer will now open the source file and destination l
         <location filename="../../ballontranslator/ui/text_engine/effects/cards.py" line="549"/>
         <source>Images (*.png *.jpg *.jpeg *.webp *.bmp *.jxl)</source>
         <translation>이미지 (*.png *.jpg *.jpeg *.webp *.bmp *.jxl)</translation>
+    </message>
+</context>
+<context>
+    <name>MergeDialog</name>
+    <message>
+        <source>Region Merge Tool Settings</source>
+        <translation>영역 병합 도구 설정</translation>
+    </message>
+    <message>
+        <source>Merge Vertically</source>
+        <translation>세로로 병합</translation>
+    </message>
+    <message>
+        <source>Merge Horizontally</source>
+        <translation>가로로 병합</translation>
+    </message>
+    <message>
+        <source>Vertical Then Horizontal</source>
+        <translation>세로 병합 후 가로 병합</translation>
+    </message>
+    <message>
+        <source>Horizontal Then Vertical</source>
+        <translation>가로 병합 후 세로 병합</translation>
+    </message>
+    <message>
+        <source>None</source>
+        <translation>없음</translation>
+    </message>
+    <message>
+        <source>Prefer Shorter Label</source>
+        <translation>짧은 라벨 우선</translation>
+    </message>
+    <message>
+        <source>Use First Box Label</source>
+        <translation>첫 번째 박스의 라벨 사용</translation>
+    </message>
+    <message>
+        <source>Combine Labels (label1+label2)</source>
+        <translation>라벨 결합 (label1+label2)</translation>
+    </message>
+    <message>
+        <source>Prefer Non-default Label</source>
+        <translation>기본값이 아닌 라벨 우선</translation>
+    </message>
+    <message>
+        <source>Main Settings</source>
+        <translation>기본 설정</translation>
+    </message>
+    <message>
+        <source>Merge Mode:</source>
+        <translation>병합 방식:</translation>
+    </message>
+    <message>
+        <source>Text Merge Order by Label</source>
+        <translation>라벨별 텍스트 병합 순서</translation>
+    </message>
+    <message>
+        <source>label1,label2,...</source>
+        <translation>라벨1,라벨2,...</translation>
+    </message>
+    <message>
+        <source>Left-to-right (LTR) Labels:</source>
+        <translation>왼쪽 → 오른쪽 (LTR) 라벨:</translation>
+    </message>
+    <message>
+        <source>Right-to-left (RTL) Labels:</source>
+        <translation>오른쪽 → 왼쪽 (RTL) 라벨:</translation>
+    </message>
+    <message>
+        <source>Top-to-bottom (TTB) Labels:</source>
+        <translation>위 → 아래 (TTB) 라벨:</translation>
+    </message>
+    <message>
+        <source>Label Merge Rules</source>
+        <translation>라벨 병합 규칙</translation>
+    </message>
+    <message>
+        <source>Label Merge Strategy:</source>
+        <translation>라벨 처리 방식:</translation>
+    </message>
+    <message>
+        <source>Exclude Labels from Merging</source>
+        <translation>특정 라벨을 병합에서 제외</translation>
+    </message>
+    <message>
+        <source>Example: label1,label2</source>
+        <translation>예: label1,label2</translation>
+    </message>
+    <message>
+        <source>Excluded Labels:</source>
+        <translation>제외할 라벨:</translation>
+    </message>
+    <message>
+        <source>Merge Only Identical Labels</source>
+        <translation>라벨이 완전히 같을 때만 병합</translation>
+    </message>
+    <message>
+        <source>Merge Only Within Specified Label Groups</source>
+        <translation>지정한 라벨 그룹 안에서만 병합</translation>
+    </message>
+    <message>
+        <source>One group per line; separate labels with commas.
+Example:
+balloon,balloon2
+qipao,qipao2</source>
+        <translation>한 줄에 한 그룹을 입력하고 라벨은 쉼표로 구분합니다.
+예:
+balloon,balloon2
+qipao,qipao2</translation>
+    </message>
+    <message>
+        <source>Geometric Merge Settings</source>
+        <translation>박스 간격·겹침 설정</translation>
+    </message>
+    <message>
+        <source>Maximum Vertical Gap (pixels):</source>
+        <translation>최대 세로 간격 (픽셀):</translation>
+    </message>
+    <message>
+        <source>Minimum Horizontal Overlap:</source>
+        <translation>최소 가로 겹침 비율:</translation>
+    </message>
+    <message>
+        <source>Maximum Horizontal Gap (pixels):</source>
+        <translation>최대 가로 간격 (픽셀):</translation>
+    </message>
+    <message>
+        <source>Minimum Vertical Overlap:</source>
+        <translation>최소 세로 겹침 비율:</translation>
+    </message>
+    <message>
+        <source>Advanced Options</source>
+        <translation>고급 옵션</translation>
+    </message>
+    <message>
+        <source>Allow Negative Gaps (Overlapping Boxes)</source>
+        <translation>박스 사이의 음수 간격 허용 (박스 겹침 허용)</translation>
+    </message>
+    <message>
+        <source>Merge Result Type</source>
+        <translation>병합 결과 형태</translation>
+    </message>
+    <message>
+        <source>Merge into Axis-aligned Rectangles</source>
+        <translation>일반 사각형으로 병합</translation>
+    </message>
+    <message>
+        <source>Merge into Rotated Rectangles</source>
+        <translation>회전 사각형으로 병합</translation>
+    </message>
+    <message>
+        <source>Run on Current Page</source>
+        <translation>현재 페이지에 실행</translation>
+    </message>
+    <message>
+        <source>Run on All Pages</source>
+        <translation>모든 페이지에 실행</translation>
+    </message>
+    <message>
+        <source>Cancel</source>
+        <translation>취소</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Vertical Merge (Top/Bottom)&lt;/b&gt;</source>
+        <translation>&lt;b&gt;세로 병합 (위아래)&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Horizontal Merge (Left/Right)&lt;/b&gt;</source>
+        <translation>&lt;b&gt;가로 병합 (좌우)&lt;/b&gt;</translation>
+    </message>
+</context>
+<context>
+    <name>MergeThread</name>
+    <message>
+        <source>Region merge failed.</source>
+        <translation>영역 병합에 실패했습니다.</translation>
+    </message>
+    <message>
+        <source>Merging regions: </source>
+        <translation>영역 병합: </translation>
     </message>
 </context>
 </TS>

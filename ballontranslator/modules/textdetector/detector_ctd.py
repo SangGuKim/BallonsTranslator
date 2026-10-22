@@ -33,6 +33,18 @@ class ComicTextDetector(TextDetectorBase):
         },
         'device': DEVICE_SELECTOR(),
         'description': 'ComicTextDetector',
+        'calibrate_source_font_size': {
+            'value': False,
+            'type': 'checkbox',
+            'display_name': 'Calibrate Source Font Size',
+            'description': 'Match source ink size to the selected CJK font glyphs. Enable Preserve Source Font Size to prevent later layout shrinking.',
+        },
+        'preserve_source_font_size': {
+            'value': False,
+            'type': 'checkbox',
+            'display_name': 'Preserve Source Font Size',
+            'description': 'Prevent automatic layout and stroke adjustment from shrinking the source-based font size.',
+        },
         'font size multiplier': 1.,
         'font size max': -1,
         'font size min': -1,
